@@ -8,12 +8,21 @@ export const generateEbook = async (
   brandName: string,
   tone: string
 ): Promise<EbookData> => {
-  // Always use process.env.API_KEY directly as per the @google/genai coding guidelines
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Always obtain the key from process.env.API_KEY as per guidelines.
+  // We initialize inside the function to ensure the environment is fully ready.
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("API_KEY is missing. Please ensure it is set in your Vercel Environment Variables.");
+  }
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `You are an AI Ebook Generator that creates premium, authority-level ebooks designed for high-ticket lead generation and expert positioning. 
+  const ai = new GoogleGenAI({ apiKey });
+
+  try {
+    const response = await ai.models.generateContent({
+      // Using gemini-3-flash-preview for faster response times and better reliability for large text tasks
+      model: 'gemini-3-flash-preview',
+      contents: `You are an AI Ebook Generator that creates premium, authority-level ebooks designed for lead generation and expert positioning. 
 
 Topic: "${topic}"
 Niche: "${niche}"
@@ -22,65 +31,65 @@ Tone: ${tone}
 
 CRITICAL INSTRUCTIONS:
 1. Generate exactly 15 chapters.
-2. Each chapter must be fully written, complete, and client-ready prose. 
-3. This is NOT an outline, overview, or summary. Do NOT include chapter descriptions or placeholders.
-4. QUALITY RULES:
-   - Every chapter must contain real, in-depth, expert information.
-   - Every chapter must be substantial (aim for 500+ words per chapter). Short content is unacceptable.
-   - Use multiple paragraphs and clear sections.
-   - Each chapter must be a finished product that positions the author as a trusted high-ticket expert.
-5. Also include:
-   - A captivating title and subtitle.
-   - A comprehensive introduction.
-   - 3 unique, irresistible bonus offers (checklists, mini-guides, or templates) that complement the authority positioning.
+2. Each chapter must be fully written expert prose. 
+3. Include:
+   - Captivating title and subtitle.
+   - Comprehensive introduction.
+   - 3 unique bonus offers (checklists, mini-guides, or templates).
 
-The final output must be ready for immediate delivery, publishing, or use as a high-value asset. Assume the reader should feel confident paying for a high-ticket offer after reading this content.`,
-    config: {
-      thinkingConfig: { thinkingBudget: 32768 },
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          subtitle: { type: Type.STRING },
-          introduction: { type: Type.STRING },
-          author: { type: Type.STRING },
-          niche: { type: Type.STRING },
-          chapters: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                content: { type: Type.STRING, description: "Full, detailed, expert-level prose (Minimum 15 lines/500 words)." },
-              },
-              required: ["title", "content"]
+The final output must be in valid JSON format.`,
+      config: {
+        thinkingConfig: { thinkingBudget: 24576 },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            subtitle: { type: Type.STRING },
+            introduction: { type: Type.STRING },
+            author: { type: Type.STRING },
+            niche: { type: Type.STRING },
+            chapters: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  content: { type: Type.STRING },
+                },
+                required: ["title", "content"]
+              }
+            },
+            bonuses: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  type: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  items: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  }
+                },
+                required: ["type", "title", "description"]
+              }
             }
           },
-          bonuses: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                type: { type: Type.STRING },
-                title: { type: Type.STRING },
-                description: { type: Type.STRING },
-                items: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING }
-                }
-              },
-              required: ["type", "title", "description"]
-            }
-          }
+          required: ["title", "subtitle", "introduction", "chapters", "bonuses", "author", "niche"]
         },
-        required: ["title", "subtitle", "introduction", "chapters", "bonuses", "author", "niche"]
       },
-    },
-  });
+    });
 
-  // Extract generated text using the .text property as per guidelines
-  const text = response.text;
-  if (!text) throw new Error("Failed to generate authority ebook content.");
-  return JSON.parse(text) as EbookData;
+    const text = response.text;
+    if (!text) throw new Error("The AI model returned an empty response.");
+    
+    return JSON.parse(text) as EbookData;
+  } catch (err: any) {
+    console.error("Gemini API detailed error:", err);
+    // Extract a more meaningful error message if possible
+    const message = err.message || "Unknown API Error";
+    throw new Error(message);
+  }
 };

@@ -3,8 +3,15 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 
-// Do not define process.env or polyfill it here, as per Gemini API guidelines.
-// The execution context is assumed to provide process.env.API_KEY directly.
+// Polyfill process for browser environment to ensure process.env.API_KEY access doesn't crash.
+// The actual values are expected to be injected by the hosting environment or Vercel.
+if (typeof (window as any).process === 'undefined') {
+  (window as any).process = {
+    env: {
+      API_KEY: '' 
+    }
+  };
+}
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
