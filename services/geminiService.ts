@@ -1,8 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { EbookData } from "../types";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+import { EbookData } from "../types.ts";
 
 export const generateEbook = async (
   topic: string,
@@ -10,6 +8,9 @@ export const generateEbook = async (
   brandName: string,
   tone: string
 ): Promise<EbookData> => {
+  // Always use process.env.API_KEY directly as per the @google/genai coding guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: `You are an AI Ebook Generator that creates premium, authority-level ebooks designed for high-ticket lead generation and expert positioning. 
@@ -54,9 +55,7 @@ The final output must be ready for immediate delivery, publishing, or use as a h
                 content: { type: Type.STRING, description: "Full, detailed, expert-level prose (Minimum 15 lines/500 words)." },
               },
               required: ["title", "content"]
-            },
-            minItems: 15,
-            maxItems: 15
+            }
           },
           bonuses: {
             type: Type.ARRAY,
@@ -80,6 +79,7 @@ The final output must be ready for immediate delivery, publishing, or use as a h
     },
   });
 
+  // Extract generated text using the .text property as per guidelines
   const text = response.text;
   if (!text) throw new Error("Failed to generate authority ebook content.");
   return JSON.parse(text) as EbookData;

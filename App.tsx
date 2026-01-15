@@ -1,8 +1,8 @@
 
 import React, { useState, useRef } from 'react';
-import { EbookData, EbookState, CoverTemplateId } from './types';
-import { generateEbook } from './services/geminiService';
-import { CoverRenderer, ModernCover, BoldCover, ElegantCover } from './components/CoverTemplates';
+import { EbookData, EbookState, CoverTemplateId } from './types.ts';
+import { generateEbook } from './services/geminiService.ts';
+import { CoverRenderer, ModernCover, BoldCover, ElegantCover } from './components/CoverTemplates.tsx';
 import JSZip from 'jszip';
 
 const Tones = ['Professional', 'Inspirational', 'Casual', 'Action-Oriented', 'Empathetic', 'Authoritative'];
@@ -26,10 +26,11 @@ export default function App() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Refs for smooth scrolling
+  // Refs for smooth scrolling and PDF capturing
   const formRef = useRef<HTMLDivElement>(null);
   const whyRef = useRef<HTMLElement>(null);
   const samplesRef = useRef<HTMLElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
 
   const scrollTo = (ref: React.RefObject<HTMLElement | null>) => {
     ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -63,7 +64,137 @@ export default function App() {
     }
   };
 
-  const handleDownload = async () => {
+  const handleDownloadPDF = async () => {
+    if (!state.data || !coverRef.current) return;
+    setIsDownloading(true);
+
+    try {
+      // Dynamic imports for PDF generation libraries
+      const { default: jsPDF } = await import('jspdf');
+      const { default: html2canvas } = await import('html2canvas');
+
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 20;
+      const contentWidth = pageWidth - (margin * 2);
+
+      // 1. Cover Page - Capture rendered component
+      const canvas = await html2canvas(coverRef.current, { scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+
+      // 2. Table of Contents
+      doc.addPage();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(26);
+      doc.text('Table of Contents', margin, 40);
+      doc.setDrawColor(99, 102, 241);
+      doc.line(margin, 45, margin + 40, 45);
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      let tocY = 60;
+      doc.text('Introduction', margin, tocY);
+      tocY += 10;
+      state.data.chapters.forEach((ch, i) => {
+        doc.text(`${i + 1}. ${ch.title}`, margin, tocY);
+        tocY += 8;
+        if (tocY > pageHeight - margin) {
+          doc.addPage();
+          tocY = margin;
+        }
+      });
+
+      // 3. Introduction
+      doc.addPage();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.text('Introduction', margin, 35);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor(80, 80, 80);
+      const introLines = doc.splitTextToSize(state.data.introduction, contentWidth);
+      doc.text(introLines, margin, 50, { lineHeightFactor: 1.5 });
+
+      // 4. Chapters
+      doc.setTextColor(0, 0, 0);
+      state.data.chapters.forEach((chapter, index) => {
+        doc.addPage();
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(18);
+        doc.text(`Chapter ${index + 1}: ${chapter.title}`, margin, 35);
+        doc.setDrawColor(200, 200, 200);
+        doc.line(margin, 40, margin + 20, 40);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        const lines = doc.splitTextToSize(chapter.content, contentWidth);
+        
+        let cursorY = 55;
+        lines.forEach((line: string) => {
+          if (cursorY > pageHeight - margin) {
+            doc.addPage();
+            cursorY = margin;
+          }
+          doc.text(line, margin, cursorY);
+          cursorY += 6.5;
+        });
+      });
+
+      // 5. Bonuses
+      doc.addPage();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.text('Conversion Boosters', margin, 35);
+      
+      let bonusY = 55;
+      state.data.bonuses.forEach((bonus) => {
+        if (bonusY > pageHeight - 60) {
+          doc.addPage();
+          bonusY = margin;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text(`${bonus.title} (${bonus.type})`, margin, bonusY);
+        bonusY += 8;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        const descLines = doc.splitTextToSize(bonus.description, contentWidth);
+        doc.text(descLines, margin, bonusY);
+        bonusY += (descLines.length * 5) + 8;
+        
+        if (bonus.items) {
+          doc.setTextColor(50, 50, 50);
+          bonus.items.forEach(item => {
+            doc.text(`• ${item}`, margin + 5, bonusY);
+            bonusY += 6;
+          });
+          bonusY += 10;
+        }
+        doc.setTextColor(0, 0, 0);
+      });
+
+      // Footer numbering (Simple approach)
+      const pageCount = doc.internal.pages.length;
+      for (let i = 2; i < pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(9);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Page ${i - 1}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      }
+
+      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Ebook.pdf`);
+    } catch (err) {
+      console.error("PDF download error:", err);
+      alert("Something went wrong generating your PDF. You can still download the ZIP asset pack.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadZip = async () => {
     if (!state.data) return;
     setIsDownloading(true);
 
@@ -403,18 +534,29 @@ export default function App() {
 
                 <div className="space-y-4 pt-6 border-t border-white/5">
                   <button 
-                    onClick={handleDownload}
+                    onClick={handleDownloadPDF}
                     disabled={isDownloading}
-                    className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-black rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/20 transition-all active:scale-[0.98]"
+                    className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900 disabled:cursor-not-allowed text-white font-black rounded-2xl flex items-center justify-center gap-3 shadow-xl shadow-indigo-600/20 transition-all active:scale-[0.98]"
                   >
                     {isDownloading ? (
                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                     ) : (
                       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                       </svg>
                     )}
-                    {isDownloading ? "Packaging Assets..." : "Download Expert Assets"}
+                    {isDownloading ? "Generating PDF..." : "Download Ebook (PDF)"}
+                  </button>
+                  
+                  <button 
+                    onClick={handleDownloadZip}
+                    disabled={isDownloading}
+                    className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 text-zinc-300 font-bold rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Assets (ZIP)
                   </button>
                 </div>
               </div>
@@ -423,7 +565,7 @@ export default function App() {
             <div className="lg:col-span-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
               {activeTab === 'cover' && (
                 <div className="flex flex-col items-center">
-                  <div className="w-full max-w-md shadow-[0_50px_100px_-20px_rgba(0,0,0,0.7)] rounded-3xl overflow-hidden transform hover:scale-[1.02] transition-transform duration-500">
+                  <div ref={coverRef} className="w-full max-w-md shadow-[0_50px_100px_-20px_rgba(0,0,0,0.7)] rounded-3xl overflow-hidden transform hover:scale-[1.02] transition-transform duration-500">
                     <CoverRenderer 
                       id={state.selectedCoverId} 
                       title={state.data.title} 
@@ -556,4 +698,3 @@ export default function App() {
     </div>
   );
 }
-

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { CoverTemplateId } from '../types';
+import { CoverTemplateId } from '../types.ts';
 
 interface CoverProps {
   title: string;
