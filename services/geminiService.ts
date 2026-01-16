@@ -9,7 +9,7 @@ export const generateEbook = async (
   tone: string
 ): Promise<EbookData> => {
   try {
-    // Create AI instance directly with the environment key as per guidelines
+    // Instantiate inside the function to capture process.env.API_KEY at call time
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const response = await ai.models.generateContent({
@@ -19,7 +19,7 @@ export const generateEbook = async (
 Requirements:
 1. Chapters: Exactly 7 expert-level chapters.
 2. Structure: Captivating title, subtitle, introduction, and bonuses.
-3. Content: Expert depth, professional formatting, JSON output only.`,
+3. Content: Expert depth, professional formatting, high-value insights, JSON output only.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -64,9 +64,7 @@ Requirements:
     return JSON.parse(text) as EbookData;
   } catch (err: any) {
     console.error("Gemini Generation Error:", err);
-    // Extract a readable error message if possible
-    const errorMessage = err.message || "An unexpected error occurred during generation.";
-    throw new Error(errorMessage);
+    throw new Error(err.message || "An unexpected error occurred during ebook generation.");
   }
 };
 
@@ -81,7 +79,7 @@ export const generateAdditionalChapter = async (
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Add a new expert-level chapter to the ebook "${ebookTitle}" specifically about "${newChapterTopic}". Maintaining tone: ${tone}. Output as JSON.`,
+      contents: `Add a new expert-level chapter to the ebook "${ebookTitle}" about "${newChapterTopic}". Tone: ${tone}. JSON output.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -100,6 +98,6 @@ export const generateAdditionalChapter = async (
     return JSON.parse(text) as Chapter;
   } catch (err: any) {
     console.error("Gemini Chapter Addition Error:", err);
-    throw new Error(err.message || "Failed to generate additional chapter.");
+    throw new Error(err.message || "Failed to generate the additional chapter.");
   }
 };

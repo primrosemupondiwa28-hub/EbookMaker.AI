@@ -50,14 +50,12 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error("Generation failed:", err);
-      // Handle potential API key errors gracefully in the UI
-      if (err.message?.includes('401') || err.message?.includes('API_KEY')) {
-        setError("API Authentication Error. Please verify the API key is active.");
-      } else if (err.message?.includes('429')) {
-        setError("Quota exceeded. Please wait a moment and try again.");
-      } else {
-        setError(err.message || 'Something went wrong. Please try again.');
+      // Clean up error message for display
+      let displayError = err.message || "Generation failed. Please try again.";
+      if (displayError.includes("API_KEY")) {
+        displayError = "API Key error. Please ensure your project settings include a valid API_KEY.";
       }
+      setError(displayError);
       setState(prev => ({ ...prev, isGenerating: false }));
     }
   };
@@ -98,7 +96,7 @@ export default function App() {
     
     try {
       const coverEl = document.getElementById('pdf-export-cover-capture');
-      if (!coverEl) throw new Error("Could not find the cover element to export.");
+      if (!coverEl) throw new Error("Export target missing.");
 
       const doc = new jsPDF('p', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -174,10 +172,10 @@ export default function App() {
         });
       });
 
-      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Authority_Ebook.pdf`);
+      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Final_Manuscript.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
-      alert("PDF generation encountered an error. Please try again.");
+      alert("Something went wrong while assembling the PDF. Please try again.");
     } finally {
       setIsDownloading(false);
     }
@@ -191,8 +189,8 @@ export default function App() {
             <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} className="absolute inset-0 border-4 border-t-indigo-500 rounded-full"></motion.div>
           </div>
-          <h2 className="text-3xl font-black mb-4 tracking-tight">Architecting Authority</h2>
-          <p className="text-slate-400 leading-relaxed text-sm">Gemini AI is crafting expert-level content. This usually takes 30-45 seconds.</p>
+          <h2 className="text-3xl font-black mb-4 tracking-tight">Creating Your Legacy</h2>
+          <p className="text-slate-400 leading-relaxed text-sm">Our AI engine is currently researching and drafting your manuscript. This typically takes 30-45 seconds.</p>
         </motion.div>
       </div>
     );
@@ -223,7 +221,7 @@ export default function App() {
             <div className="max-w-7xl mx-auto px-6 text-center mb-24">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-8">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                AI Content Engine
+                AI Generation Engine Online
               </motion.div>
               
               <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto">
@@ -234,21 +232,21 @@ export default function App() {
                 <form onSubmit={handleGenerate} className="grid md:grid-cols-[1fr_auto] gap-2 p-2">
                   <div className="grid md:grid-cols-2 gap-4 p-4 text-left">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Core Topic</label>
-                      <input required type="text" placeholder="e.g. Scaling E-commerce" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Topic or Keyword</label>
+                      <input required type="text" placeholder="e.g. Sales Psychology" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Author Name</label>
-                      <input required type="text" placeholder="Your Name" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Author or Brand</label>
+                      <input required type="text" placeholder="Your Brand" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
                     </div>
                   </div>
-                  <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg">Generate Ebook</button>
+                  <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg">Generate Now</button>
                 </form>
               </motion.div>
               
               {error && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-8 p-6 glass-panel border-rose-500/30 rounded-2xl max-w-xl mx-auto text-left">
-                   <p className="text-rose-400 text-sm leading-relaxed font-medium">Wait: {error}</p>
+                   <p className="text-rose-400 text-sm leading-relaxed font-medium">Status: {error}</p>
                 </motion.div>
               )}
             </div>
@@ -259,13 +257,13 @@ export default function App() {
               <aside className="space-y-8">
                 <div className="glass-panel p-6 rounded-3xl sticky top-28 border-slate-800">
                   <div className="space-y-1 mb-8">
-                    <button onClick={() => setActiveTab('cover')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'cover' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Cover Design</button>
+                    <button onClick={() => setActiveTab('cover')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'cover' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Visual Design</button>
                     <button onClick={() => setActiveTab('content')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Manuscript</button>
-                    <button onClick={() => setActiveTab('bonuses')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'bonuses' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Bonus Assets</button>
+                    <button onClick={() => setActiveTab('bonuses')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'bonuses' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Assets</button>
                   </div>
                   <div className="pt-6 border-t border-slate-800 space-y-3">
-                    <button onClick={handleDownloadPDF} disabled={isDownloading} className="w-full py-4 bg-white text-black font-black text-sm rounded-2xl hover:bg-slate-100 transition-all disabled:opacity-50">{isDownloading ? 'Building PDF...' : 'Export Final PDF'}</button>
-                    <button onClick={() => setState({ ...state, data: null })} className="w-full py-3 bg-slate-900 text-slate-400 font-bold text-xs rounded-2xl hover:bg-slate-800 transition-all">Start Over</button>
+                    <button onClick={handleDownloadPDF} disabled={isDownloading} className="w-full py-4 bg-white text-black font-black text-sm rounded-2xl hover:bg-slate-100 transition-all disabled:opacity-50">{isDownloading ? 'Building...' : 'Export PDF'}</button>
+                    <button onClick={() => setState({ ...state, data: null })} className="w-full py-3 bg-slate-900 text-slate-400 font-bold text-xs rounded-2xl hover:bg-slate-800 transition-all">New Project</button>
                   </div>
                 </div>
               </aside>
@@ -311,11 +309,11 @@ export default function App() {
                       <div className="glass-panel p-10 rounded-[2.5rem] border-slate-800/50 border-dashed border-2 bg-slate-900/10">
                         <div className="flex flex-col items-center text-center space-y-6">
                           <div className="space-y-2">
-                            <h4 className="text-xl font-black text-white">Expand Your Manuscript</h4>
-                            <p className="text-slate-400 text-sm">Add custom chapters to refine your message.</p>
+                            <h4 className="text-xl font-black text-white">Expand Your Content</h4>
+                            <p className="text-slate-400 text-sm">Add custom chapters to tailor the message.</p>
                           </div>
                           <form onSubmit={handleAddChapter} className="w-full max-w-lg flex flex-col md:flex-row gap-3">
-                            <input type="text" placeholder="e.g. Case Studies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
+                            <input type="text" placeholder="e.g. Practical Exercises..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
                             <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl shadow-lg min-w-[140px]">
                               {isAddingChapter ? 'Generating...' : 'Add Chapter'}
                             </button>
