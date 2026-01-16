@@ -9,6 +9,15 @@ import html2canvas from 'html2canvas';
 
 const CoverTemplates: CoverTemplateId[] = ['modern', 'bold', 'gradient', 'minimal', 'elegant', 'dark'];
 
+const LoadingMessages = [
+  "Analyzing target niche demographics...",
+  "Structuring high-authority chapters...",
+  "Drafting expert-level insights...",
+  "Polishing introduction and brand voice...",
+  "Creating high-value bonus assets...",
+  "Finalizing your instant legacy..."
+];
+
 export default function App() {
   const [state, setState] = useState<EbookState>({
     isGenerating: false,
@@ -29,6 +38,8 @@ export default function App() {
   const [newChapterTopic, setNewChapterTopic] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [loadingIndex, setLoadingIndex] = useState(0);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -36,12 +47,22 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    if (state.isGenerating) {
+      const interval = setInterval(() => {
+        setLoadingIndex((prev) => (prev + 1) % LoadingMessages.length);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [state.isGenerating]);
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.topic || !form.brandName) return;
 
     setState(prev => ({ ...prev, isGenerating: true }));
     setError(null);
+    setLoadingIndex(0);
 
     try {
       const ebookData = await generateEbook(form.topic, form.niche, form.brandName, form.tone);
@@ -50,7 +71,6 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error("Generation failed:", err);
-      // Clean up error message for display
       let displayError = err.message || "Generation failed. Please try again.";
       if (displayError.includes("API_KEY")) {
         displayError = "API Key error. Please ensure your project settings include a valid API_KEY.";
@@ -60,6 +80,7 @@ export default function App() {
     }
   };
 
+  // Fix: Added missing handleAddChapter function
   const handleAddChapter = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!state.data || !newChapterTopic || isAddingChapter) return;
@@ -68,26 +89,36 @@ export default function App() {
     setError(null);
 
     try {
-      const newChapter = await generateAdditionalChapter(
+      const chapter = await generateAdditionalChapter(
         state.data.title,
         state.data.chapters,
         newChapterTopic,
         form.tone
       );
-      
-      setState(prev => ({
-        ...prev,
-        data: prev.data ? {
-          ...prev.data,
-          chapters: [...prev.data.chapters, newChapter]
-        } : null
-      }));
+
+      setState(prev => {
+        if (!prev.data) return prev;
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            chapters: [...prev.data.chapters, chapter]
+          }
+        };
+      });
       setNewChapterTopic('');
     } catch (err: any) {
-      setError(err.message || "Could not generate the additional chapter.");
+      console.error("Failed to add chapter:", err);
+      setError(err.message || "Failed to generate additional chapter.");
     } finally {
       setIsAddingChapter(false);
     }
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleDownloadPDF = async () => {
@@ -105,15 +136,40 @@ export default function App() {
       const contentWidth = pageWidth - (margin * 2);
       const lineHeight = 7;
 
+      // Cover Page
       const canvas = await html2canvas(coverEl, { 
         scale: 3, 
         useCORS: true,
         logging: false,
         backgroundColor: '#000000'
       });
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
       doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
 
+      // Table of Contents Page
+      doc.addPage();
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(24);
+      doc.setTextColor(30, 30, 30);
+      doc.text("Table of Contents", margin, 40);
+      doc.setDrawColor(99, 102, 241);
+      doc.setLineWidth(1);
+      doc.line(margin, 45, margin + 20, 45);
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      let tocY = 65;
+      doc.text("01. Introduction", margin, tocY);
+      state.data.chapters.forEach((ch, i) => {
+        tocY += 10;
+        doc.text(`0${i+2}. ${ch.title}`, margin, tocY);
+      });
+      tocY += 10;
+      doc.text(`0${state.data.chapters.length + 2}. Bonus Assets`, margin, tocY);
+      tocY += 10;
+      doc.text(`0${state.data.chapters.length + 3}. Final Thoughts`, margin, tocY);
+
+      // Introduction Page
       doc.addPage();
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(26);
@@ -143,6 +199,7 @@ export default function App() {
         cursorY += (lines.length * lineHeight) + lineHeight;
       });
 
+      // Chapters
       state.data.chapters.forEach((ch, idx) => {
         doc.addPage();
         cursorY = margin + 14; 
@@ -172,7 +229,21 @@ export default function App() {
         });
       });
 
-      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Final_Manuscript.pdf`);
+      // CTA Page
+      doc.addPage();
+      doc.setFillColor(248, 250, 252);
+      doc.rect(0, 0, pageWidth, pageHeight, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(28);
+      doc.setTextColor(15, 23, 42);
+      doc.text("The Next Step", margin, 60);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      const ctaLines = doc.splitTextToSize(state.data.cta || "Thank you for reading this guide. Put these insights into action today.", contentWidth);
+      doc.text(ctaLines, margin, 80);
+
+      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Authority_Ebook.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
       alert("Something went wrong while assembling the PDF. Please try again.");
@@ -183,21 +254,34 @@ export default function App() {
 
   if (state.isGenerating) {
     return (
-      <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-8 text-center">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md w-full">
+      <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-8 text-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')] opacity-20 pointer-events-none"></div>
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md w-full relative z-10">
           <div className="relative w-24 h-24 mx-auto mb-10">
-            <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
+            <div className="absolute inset-0 border-4 border-indigo-500/10 rounded-full"></div>
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} className="absolute inset-0 border-4 border-t-indigo-500 rounded-full"></motion.div>
           </div>
-          <h2 className="text-3xl font-black mb-4 tracking-tight">Creating Your Legacy</h2>
-          <p className="text-slate-400 leading-relaxed text-sm">Our AI engine is currently researching and drafting your manuscript. This typically takes 30-45 seconds.</p>
+          <h2 className="text-3xl font-black mb-4 tracking-tight text-white">Generating Authority</h2>
+          <AnimatePresence mode="wait">
+            <motion.p 
+              key={loadingIndex}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="text-indigo-400 font-mono text-xs uppercase tracking-widest"
+            >
+              {LoadingMessages[loadingIndex]}
+            </motion.p>
+          </AnimatePresence>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen relative">
+      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')] opacity-10 pointer-events-none"></div>
+      
       {state.data && (
         <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
           <div id="pdf-export-cover-capture" style={{ width: '800px', height: '1131px' }}>
@@ -206,63 +290,63 @@ export default function App() {
         </div>
       )}
 
-      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b ${scrolled ? 'bg-slate-950/80 backdrop-blur-xl border-slate-800 py-4' : 'bg-transparent border-transparent py-6'}`}>
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b ${scrolled ? 'bg-slate-950/90 backdrop-blur-xl border-slate-800 py-4' : 'bg-transparent border-transparent py-6'}`}>
         <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setState({ ...state, data: null })}>
             <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center font-black text-white shadow-lg">E</div>
-            <span className="text-lg font-black tracking-tighter">EbookMaker<span className="text-indigo-500">.AI</span></span>
+            <span className="text-lg font-black tracking-tighter text-white">EbookMaker<span className="text-indigo-500">.AI</span></span>
           </div>
         </div>
       </header>
 
-      <main>
+      <main className="relative z-10">
         {!state.data ? (
           <div className="pt-32 md:pt-48 pb-20">
             <div className="max-w-7xl mx-auto px-6 text-center mb-24">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-8">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                AI Generation Engine Online
+                Instant Expert Generation
               </motion.div>
               
-              <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto">
-                Authority, <span className="text-indigo-500">Instantly.</span>
+              <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto text-white">
+                Expert Content, <br/><span className="text-indigo-500">In Seconds.</span>
               </motion.h1>
 
               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
                 <form onSubmit={handleGenerate} className="grid md:grid-cols-[1fr_auto] gap-2 p-2">
                   <div className="grid md:grid-cols-2 gap-4 p-4 text-left">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Topic or Keyword</label>
-                      <input required type="text" placeholder="e.g. Sales Psychology" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Core Topic</label>
+                      <input required type="text" placeholder="e.g. Real Estate Scaling" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-white" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Author or Brand</label>
-                      <input required type="text" placeholder="Your Brand" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
+                      <input required type="text" placeholder="Your Name" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-white" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
                     </div>
                   </div>
-                  <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg">Generate Now</button>
+                  <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg uppercase tracking-wider">Generate Ebook</button>
                 </form>
               </motion.div>
               
               {error && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-8 p-6 glass-panel border-rose-500/30 rounded-2xl max-w-xl mx-auto text-left">
-                   <p className="text-rose-400 text-sm leading-relaxed font-medium">Status: {error}</p>
+                   <p className="text-rose-400 text-sm leading-relaxed font-medium">Wait: {error}</p>
                 </motion.div>
               )}
             </div>
           </div>
         ) : (
           <div className="pt-24 pb-20">
-            <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-[300px_1fr] gap-12">
+            <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-[280px_1fr] gap-12">
               <aside className="space-y-8">
                 <div className="glass-panel p-6 rounded-3xl sticky top-28 border-slate-800">
                   <div className="space-y-1 mb-8">
                     <button onClick={() => setActiveTab('cover')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'cover' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Visual Design</button>
                     <button onClick={() => setActiveTab('content')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Manuscript</button>
-                    <button onClick={() => setActiveTab('bonuses')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'bonuses' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Assets</button>
+                    <button onClick={() => setActiveTab('bonuses')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'bonuses' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Asset Pack</button>
                   </div>
                   <div className="pt-6 border-t border-slate-800 space-y-3">
-                    <button onClick={handleDownloadPDF} disabled={isDownloading} className="w-full py-4 bg-white text-black font-black text-sm rounded-2xl hover:bg-slate-100 transition-all disabled:opacity-50">{isDownloading ? 'Building...' : 'Export PDF'}</button>
+                    <button onClick={handleDownloadPDF} disabled={isDownloading} className="w-full py-4 bg-white text-black font-black text-sm rounded-2xl hover:bg-slate-100 transition-all disabled:opacity-50">{isDownloading ? 'Building...' : 'Export Final PDF'}</button>
                     <button onClick={() => setState({ ...state, data: null })} className="w-full py-3 bg-slate-900 text-slate-400 font-bold text-xs rounded-2xl hover:bg-slate-800 transition-all">New Project</button>
                   </div>
                 </div>
@@ -272,7 +356,7 @@ export default function App() {
                 <AnimatePresence mode="wait">
                   {activeTab === 'cover' && (
                     <motion.div key="cover" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex flex-col items-center">
-                      <div className="w-full max-w-sm shadow-2xl rounded-2xl overflow-hidden border border-white/5 indigo-glow">
+                      <div className="w-full max-w-sm shadow-2xl rounded-2xl overflow-hidden border border-white/5 indigo-glow bg-slate-950">
                         <CoverRenderer id={state.selectedCoverId} title={state.data.title} subtitle={state.data.subtitle} author={state.data.author} />
                       </div>
                       <div className="mt-12 w-full grid grid-cols-3 md:grid-cols-6 gap-4">
@@ -289,32 +373,49 @@ export default function App() {
 
                   {activeTab === 'content' && (
                     <motion.div key="content" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-3xl mx-auto space-y-12">
-                      <div className="glass-panel p-12 md:p-20 rounded-[3rem] border-slate-800/50">
+                      <div className="glass-panel p-10 md:p-16 rounded-[2.5rem] border-slate-800/50 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500"></div>
                         <div className="mb-16">
-                          <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tight">{state.data.title}</h2>
-                          <p className="text-xl text-indigo-400 font-medium italic mb-12">{state.data.subtitle}</p>
-                          <div className="text-slate-300 leading-relaxed text-lg whitespace-pre-line italic border-l-4 border-slate-800 pl-8">{state.data.introduction}</div>
+                          <h2 className="text-4xl font-black mb-6 tracking-tight text-white">{state.data.title}</h2>
+                          <p className="text-lg text-indigo-400 font-medium italic mb-12">{state.data.subtitle}</p>
+                          <div className="text-slate-300 leading-relaxed text-lg whitespace-pre-line italic border-l-2 border-indigo-500/30 pl-8">{state.data.introduction}</div>
                         </div>
+                        
                         <div className="space-y-24">
                           {state.data.chapters.map((ch, idx) => (
-                            <div key={idx} className="relative">
-                              <div className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500/50 mb-4">Chapter 0{idx + 1}</div>
-                              <h3 className="text-2xl font-black mb-6 text-white tracking-tight">{ch.title}</h3>
-                              <div className="text-slate-400 leading-relaxed text-lg whitespace-pre-line font-light">{ch.content}</div>
+                            <div key={idx} className="relative group">
+                              <div className="flex justify-between items-start mb-6">
+                                <div className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500/50">Chapter 0{idx + 1}</div>
+                                <button 
+                                  onClick={() => copyToClipboard(ch.content, `ch-${idx}`)}
+                                  className="text-[10px] uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
+                                >
+                                  {copiedId === `ch-${idx}` ? 'Copied' : 'Copy Text'}
+                                </button>
+                              </div>
+                              <h3 className="text-2xl font-black mb-8 text-white tracking-tight">{ch.title}</h3>
+                              <div className="text-slate-400 leading-loose text-lg whitespace-pre-line font-light">{ch.content}</div>
                             </div>
                           ))}
                         </div>
+
+                        {state.data.cta && (
+                          <div className="mt-24 p-10 bg-slate-900/50 rounded-3xl border border-indigo-500/10">
+                            <h4 className="text-indigo-400 font-black text-xs uppercase tracking-widest mb-4">The Next Step</h4>
+                            <p className="text-slate-200 text-lg italic leading-relaxed">{state.data.cta}</p>
+                          </div>
+                        )}
                       </div>
 
                       <div className="glass-panel p-10 rounded-[2.5rem] border-slate-800/50 border-dashed border-2 bg-slate-900/10">
                         <div className="flex flex-col items-center text-center space-y-6">
                           <div className="space-y-2">
-                            <h4 className="text-xl font-black text-white">Expand Your Content</h4>
-                            <p className="text-slate-400 text-sm">Add custom chapters to tailor the message.</p>
+                            <h4 className="text-xl font-black text-white">Need More Depth?</h4>
+                            <p className="text-slate-400 text-sm">Add a targeted chapter to your expert manuscript.</p>
                           </div>
                           <form onSubmit={handleAddChapter} className="w-full max-w-lg flex flex-col md:flex-row gap-3">
-                            <input type="text" placeholder="e.g. Practical Exercises..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
-                            <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl shadow-lg min-w-[140px]">
+                            <input type="text" placeholder="e.g. Case Study: SaaS Growth" className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm text-white outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
+                            <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl shadow-lg min-w-[140px] uppercase tracking-wide">
                               {isAddingChapter ? 'Generating...' : 'Add Chapter'}
                             </button>
                           </form>
@@ -324,12 +425,17 @@ export default function App() {
                   )}
 
                   {activeTab === 'bonuses' && (
-                    <motion.div key="bonuses" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-6">
+                    <motion.div key="bonuses" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid md:grid-cols-1 gap-6">
                       {state.data.bonuses.map((bonus, idx) => (
-                        <div key={idx} className="glass-panel p-10 rounded-[2.5rem] border-slate-800 group hover:border-indigo-500/20 transition-all">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full mb-4 inline-block">{bonus.type}</span>
-                          <h3 className="text-3xl font-black tracking-tight mb-4">{bonus.title}</h3>
-                          <p className="text-slate-400 text-lg leading-relaxed">{bonus.description}</p>
+                        <div key={idx} className="glass-panel p-10 rounded-[2.5rem] border-slate-800 group hover:border-indigo-500/20 transition-all flex flex-col md:flex-row gap-10 items-start">
+                          <div className="w-20 h-20 bg-indigo-500/10 rounded-2xl flex items-center justify-center shrink-0 border border-indigo-500/20">
+                            <svg className="w-10 h-10 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                          </div>
+                          <div className="flex-1">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full mb-4 inline-block">{bonus.type}</span>
+                            <h3 className="text-3xl font-black tracking-tight mb-4 text-white">{bonus.title}</h3>
+                            <p className="text-slate-400 text-lg leading-relaxed">{bonus.description}</p>
+                          </div>
                         </div>
                       ))}
                     </motion.div>

@@ -19,6 +19,7 @@ export interface EbookData {
   bonuses: Bonus[];
   author: string;
   niche: string;
+  cta: string;
 }
 
 export type CoverTemplateId = 'modern' | 'bold' | 'minimal' | 'gradient' | 'elegant' | 'dark';
