@@ -10,7 +10,7 @@ import html2canvas from 'html2canvas';
 const CoverTemplates: CoverTemplateId[] = ['modern', 'bold', 'gradient', 'minimal', 'elegant', 'dark'];
 
 export default function App() {
-  // Initial check for a key in the environment (e.g., set via Vercel dashboard)
+  // Check if a key is already provided by the environment
   const isKeyInEnv = !!process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '';
   const [hasKey, setHasKey] = useState<boolean>(isKeyInEnv);
   
@@ -38,16 +38,16 @@ export default function App() {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     
+    // Check if the studio already has a key selected
     const checkStudioStatus = async () => {
-      // If no env key, check if a key was previously selected in this session
-      const studio = (window as any).aistudio;
-      if (!hasKey && studio?.hasSelectedApiKey) {
-        try {
+      try {
+        const studio = (window as any).aistudio;
+        if (!hasKey && studio && typeof studio.hasSelectedApiKey === 'function') {
           const selected = await studio.hasSelectedApiKey();
           if (selected) setHasKey(true);
-        } catch (e) {
-          console.debug("Studio key check skipped");
         }
+      } catch (e) {
+        console.debug("Studio key check skipped or failed", e);
       }
     };
     checkStudioStatus();
@@ -56,20 +56,19 @@ export default function App() {
   }, [hasKey]);
 
   const handleConnectKey = async () => {
-    const studio = (window as any).aistudio;
-    if (studio?.openSelectKey) {
-      try {
+    try {
+      const studio = (window as any).aistudio;
+      if (studio && typeof studio.openSelectKey === 'function') {
         await studio.openSelectKey();
-        // As per SDK guidelines: assume success and proceed to avoid race conditions
+        // Proceed immediately as per SDK guidelines
         setHasKey(true);
         setError(null);
-      } catch (err) {
-        console.error("Key selection failed:", err);
-        setError("Failed to open the key selection dialog. Please try again.");
+      } else {
+        throw new Error("Selection interface not found");
       }
-    } else {
-      // Fallback for environments where the object isn't available
-      setError("To use this tool, please ensure you are in a supported AI Studio environment or have configured the API_KEY environment variable.");
+    } catch (err) {
+      console.error("Key selection failed:", err);
+      setError("Please ensure you are in a supported environment to connect your API key.");
     }
   };
 
@@ -88,12 +87,11 @@ export default function App() {
     } catch (err: any) {
       console.error("Generation failed:", err);
       
-      // If the error suggests a missing or invalid entity, reset the key state
       if (err.message === "API_KEY_MISSING" || err.message?.includes("not found")) {
         setHasKey(false);
-        setError("API Key verification failed. Please re-connect your key to continue.");
+        setError("API Key verification failed. Please connect a valid paid project API key via the selection dialog.");
       } else {
-        setError(err.message || 'Generation failed. Please check your topic and try again.');
+        setError(err.message || 'Generation failed. Please try again.');
       }
       setState(prev => ({ ...prev, isGenerating: false }));
     }
@@ -271,20 +269,30 @@ export default function App() {
               </motion.h1>
               
               {!hasKey ? (
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto glass-panel p-12 rounded-[3rem] border-indigo-500/20 shadow-2xl">
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto glass-panel p-12 rounded-[3rem] border-indigo-500/20 shadow-2xl overflow-hidden relative">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 -translate-y-16 translate-x-16 rotate-45"></div>
+                  
                   <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mb-8 mx-auto">
                     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L22 22m-5-5l4-4"/></svg>
                   </div>
+                  
                   <h3 className="text-2xl font-black mb-3 tracking-tight">Connect Your API Key</h3>
                   <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                    To use the high-performance Gemini 3 Pro model, please select a valid paid API key from your project.
+                    To maintain high-quality generation, users must select their own API key from a paid GCP project.
                   </p>
+                  
                   <button onClick={handleConnectKey} className="w-full py-4 premium-gradient text-white font-black text-sm rounded-2xl shadow-xl hover:brightness-110 transition-all flex items-center justify-center gap-3">
-                    Connect API Key
+                    Select Your API Key
                   </button>
-                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block mt-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-indigo-400 transition-colors">
-                    Billing Documentation ↗
-                  </a>
+                  
+                  <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-indigo-400 transition-colors">
+                      Gemini Billing Documentation ↗
+                    </a>
+                    <p className="text-[10px] text-slate-600 leading-tight text-center">
+                      Selected keys are handled securely by the environment. Your privacy is a priority.
+                    </p>
+                  </div>
                 </motion.div>
               ) : (
                 <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
@@ -307,7 +315,7 @@ export default function App() {
               {error && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-8 p-6 glass-panel border-rose-500/30 rounded-2xl max-w-xl mx-auto text-left">
                    <p className="text-slate-400 text-sm leading-relaxed">{error}</p>
-                   <button onClick={() => { setHasKey(false); setError(null); }} className="mt-4 text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300">Switch Key</button>
+                   <button onClick={() => { setHasKey(false); setError(null); }} className="mt-4 text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300">Try Different Key</button>
                 </motion.div>
               )}
             </div>
