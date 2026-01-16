@@ -3,7 +3,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { EbookData, EbookState, CoverTemplateId, Chapter } from './types.ts';
 import { generateEbook, generateAdditionalChapter } from './services/geminiService.ts';
 import { CoverRenderer } from './components/CoverTemplates.tsx';
-import JSZip from 'jszip';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -52,7 +51,8 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error("Generation failed:", err);
-      setError(err.message || 'The AI service is temporarily unavailable. Please check your API key.');
+      // Catch specific missing key error or generic failure
+      setError(err.message || 'The AI service is temporarily unavailable.');
       setState(prev => ({ ...prev, isGenerating: false }));
     }
   };
@@ -287,10 +287,35 @@ export default function App() {
                 <motion.div 
                   initial={{ opacity: 0, y: 10 }} 
                   animate={{ opacity: 1, y: 0 }} 
-                  className="mt-12 p-6 glass-panel border-rose-500/50 rounded-3xl max-w-xl mx-auto"
+                  className="mt-12 p-8 glass-panel border-rose-500/50 rounded-3xl max-w-xl mx-auto text-left shadow-2xl"
                 >
-                  <p className="text-rose-400 text-sm font-bold mb-2">Error Generating Ebook</p>
-                  <p className="text-slate-400 text-xs leading-relaxed">{error}</p>
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    </div>
+                    <h3 className="text-lg font-black text-white tracking-tight leading-none">Generation Failure</h3>
+                  </div>
+                  <p className="text-slate-400 text-sm leading-relaxed mb-6">
+                    {error}
+                  </p>
+                  <div className="p-5 bg-slate-950/50 rounded-2xl border border-slate-800/50 space-y-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">Vercel Troubleshooting Guide:</p>
+                    <ul className="text-xs text-slate-500 space-y-2.5">
+                      <li className="flex items-start gap-3">
+                        <span className="w-4 h-4 rounded bg-slate-800 flex items-center justify-center text-[8px] mt-0.5">1</span>
+                        <span>Ensure <code>API_KEY</code> is correctly set in your <b>Vercel Project Settings</b>.</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <span className="w-4 h-4 rounded bg-slate-800 flex items-center justify-center text-[8px] mt-0.5">2</span>
+                        <span>Confirm you have <b>Redeployed</b> your Vercel project after adding the variable (Build Cache may persist).</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <span className="w-4 h-4 rounded bg-slate-800 flex items-center justify-center text-[8px] mt-0.5">3</span>
+                        <span>Note: Client-side keys are unsafe for production. For high-traffic use, consider a proxy serverless function.</span>
+                      </li>
+                    </ul>
+                  </div>
+                  <button onClick={() => setError(null)} className="mt-6 text-xs font-bold text-slate-400 hover:text-white transition-colors underline underline-offset-4 decoration-slate-700">Dismiss and try again</button>
                 </motion.div>
               )}
             </div>
@@ -354,7 +379,7 @@ export default function App() {
                         <div className="flex flex-col items-center text-center space-y-6">
                           <div className="space-y-2">
                             <h4 className="text-xl font-black text-white">Extend Your Manuscript</h4>
-                            <p className="text-slate-400 text-sm">Need more depth? Add a custom custom chapter before exporting.</p>
+                            <p className="text-slate-400 text-sm">Need more depth? Add a custom chapter before exporting.</p>
                           </div>
                           <form onSubmit={handleAddChapter} className="w-full max-w-lg flex flex-col md:flex-row gap-3">
                             <input type="text" placeholder="e.g. Case Studies, Advanced Strategies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />

@@ -8,12 +8,14 @@ export const generateEbook = async (
   brandName: string,
   tone: string
 ): Promise<EbookData> => {
-  // Directly initialize inside the function to ensure we use the most up-to-date env state
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  if (!process.env.API_KEY) {
-    throw new Error("API Key is missing. Please set the API_KEY environment variable in your Vercel dashboard.");
+  const apiKey = process.env.API_KEY;
+  
+  // Validate key BEFORE initializing the SDK to prevent the browser crash
+  if (!apiKey) {
+    throw new Error("API_KEY is missing. Please ensure you have added 'API_KEY' to your Vercel environment variables and redeployed.");
   }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({
@@ -99,11 +101,13 @@ export const generateAdditionalChapter = async (
   newChapterTopic: string,
   tone: string
 ): Promise<Chapter> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  if (!process.env.API_KEY) {
-    throw new Error("API Key is missing.");
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("API_KEY is missing.");
   }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({
