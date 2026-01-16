@@ -10,8 +10,8 @@ import html2canvas from 'html2canvas';
 const CoverTemplates: CoverTemplateId[] = ['modern', 'bold', 'gradient', 'minimal', 'elegant', 'dark'];
 
 export default function App() {
-  // Check if API_KEY is present in process.env (as configured in Vercel)
-  const isKeyInEnv = !!process.env.API_KEY && process.env.API_KEY !== 'undefined';
+  // Initial check for a key in the environment (e.g., set via Vercel dashboard)
+  const isKeyInEnv = !!process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '';
   const [hasKey, setHasKey] = useState<boolean>(isKeyInEnv);
   
   const [state, setState] = useState<EbookState>({
@@ -38,29 +38,38 @@ export default function App() {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     
-    const checkStudioKey = async () => {
-      // If we don't have an env key, check if a key was selected in the studio dialog
-      if (!isKeyInEnv && typeof (window as any).aistudio !== 'undefined') {
-        const selected = await (window as any).aistudio.hasSelectedApiKey();
-        if (selected) setHasKey(true);
+    const checkStudioStatus = async () => {
+      // If no env key, check if a key was previously selected in this session
+      const studio = (window as any).aistudio;
+      if (!hasKey && studio?.hasSelectedApiKey) {
+        try {
+          const selected = await studio.hasSelectedApiKey();
+          if (selected) setHasKey(true);
+        } catch (e) {
+          console.debug("Studio key check skipped");
+        }
       }
     };
-    checkStudioKey();
+    checkStudioStatus();
     
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [isKeyInEnv]);
+  }, [hasKey]);
 
   const handleConnectKey = async () => {
-    if (typeof (window as any).aistudio !== 'undefined') {
+    const studio = (window as any).aistudio;
+    if (studio?.openSelectKey) {
       try {
-        await (window as any).aistudio.openSelectKey();
+        await studio.openSelectKey();
+        // As per SDK guidelines: assume success and proceed to avoid race conditions
         setHasKey(true);
         setError(null);
       } catch (err) {
         console.error("Key selection failed:", err);
+        setError("Failed to open the key selection dialog. Please try again.");
       }
     } else {
-      setError("Studio environment not detected. If you are the developer, ensure API_KEY is set in your environment variables. Users can normally use the 'Select Key' dialog in supported preview environments.");
+      // Fallback for environments where the object isn't available
+      setError("To use this tool, please ensure you are in a supported AI Studio environment or have configured the API_KEY environment variable.");
     }
   };
 
@@ -79,12 +88,12 @@ export default function App() {
     } catch (err: any) {
       console.error("Generation failed:", err);
       
-      // Handle the case where the key is missing or invalid
-      if (err.message === "API_KEY_MISSING" || err.message?.includes("Requested entity was not found")) {
+      // If the error suggests a missing or invalid entity, reset the key state
+      if (err.message === "API_KEY_MISSING" || err.message?.includes("not found")) {
         setHasKey(false);
-        setError("API Key verification failed. Please ensure a valid paid API key is selected.");
+        setError("API Key verification failed. Please re-connect your key to continue.");
       } else {
-        setError(err.message || 'The AI service is temporarily unavailable.');
+        setError(err.message || 'Generation failed. Please check your topic and try again.');
       }
       setState(prev => ({ ...prev, isGenerating: false }));
     }
@@ -113,9 +122,6 @@ export default function App() {
         } : null
       }));
       setNewChapterTopic('');
-      setTimeout(() => {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      }, 100);
     } catch (err: any) {
       setError(err.message || "Could not add additional chapter.");
     } finally {
@@ -165,9 +171,8 @@ export default function App() {
       doc.setFontSize(11);
       
       let cursorY = 82;
-      const introParagraphs = state.data.introduction.split('\n').filter(p => p.trim() !== '');
-      
-      introParagraphs.forEach(p => {
+      const paragraphs = state.data.introduction.split('\n').filter(p => p.trim() !== '');
+      paragraphs.forEach(p => {
         const lines = doc.splitTextToSize(p, contentWidth);
         if (cursorY + (lines.length * lineHeight) > pageHeight - margin) {
           doc.addPage();
@@ -180,24 +185,22 @@ export default function App() {
       state.data.chapters.forEach((ch, idx) => {
         doc.addPage();
         cursorY = margin + 14; 
-        
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(9);
         doc.setTextColor(120, 120, 120);
-        doc.text(`SECTION 0${idx + 1}`, margin, cursorY - 10);
+        doc.text(`CHAPTER 0${idx + 1}`, margin, cursorY - 10);
         
         doc.setFontSize(22);
         doc.setTextColor(0, 0, 0);
         doc.text(ch.title, margin, cursorY, { maxWidth: contentWidth });
         
         cursorY += 18; 
-
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(11);
         doc.setTextColor(50, 50, 50);
 
-        const paragraphs = ch.content.split('\n').filter(p => p.trim() !== '');
-        paragraphs.forEach(p => {
+        const chParagraphs = ch.content.split('\n').filter(p => p.trim() !== '');
+        chParagraphs.forEach(p => {
           const lines = doc.splitTextToSize(p, contentWidth);
           if (cursorY + (lines.length * lineHeight) > pageHeight - margin) {
             doc.addPage();
@@ -208,41 +211,10 @@ export default function App() {
         });
       });
 
-      state.data.bonuses.forEach((bonus) => {
-        doc.addPage();
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(24);
-        doc.setTextColor(0, 0, 0);
-        doc.text(bonus.title, margin, 40);
-        
-        doc.setFontSize(10);
-        doc.setTextColor(16, 185, 129);
-        doc.text(`[ ${bonus.type.toUpperCase()} ]`, margin, 48);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(11);
-        doc.setTextColor(80, 80, 80);
-        
-        const descLines = doc.splitTextToSize(bonus.description, contentWidth);
-        doc.text(descLines, margin, 60);
-        
-        if (bonus.items) {
-          let itemY = 60 + (descLines.length * lineHeight) + 12;
-          bonus.items.forEach(item => {
-            if (itemY > pageHeight - margin) {
-              doc.addPage();
-              itemY = margin;
-            }
-            doc.text(`• ${item}`, margin + 5, itemY, { maxWidth: contentWidth - 5 });
-            itemY += lineHeight;
-          });
-        }
-      });
-
-      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Masterclass.pdf`);
+      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Manuscript.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
-      alert("PDF building failed. Ensure your browser allows canvas capturing.");
+      alert("PDF building failed. Please ensure your browser supports canvas capture.");
     } finally {
       setIsDownloading(false);
     }
@@ -256,8 +228,8 @@ export default function App() {
             <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} className="absolute inset-0 border-4 border-t-indigo-500 rounded-full"></motion.div>
           </div>
-          <h2 className="text-3xl font-black mb-4 tracking-tight">Architecting Authority</h2>
-          <p className="text-slate-400 leading-relaxed mb-8 text-sm">Drafting expert chapters with Gemini 3 Pro reasoning. This deep-dive generation takes a few moments.</p>
+          <h2 className="text-3xl font-black mb-4 tracking-tight">Writing Your Manuscript</h2>
+          <p className="text-slate-400 leading-relaxed text-sm">Gemini 3 Pro is architecting expert-level chapters. This may take a minute.</p>
         </motion.div>
       </div>
     );
@@ -280,9 +252,7 @@ export default function App() {
             <span className="text-lg font-black tracking-tighter">EbookMaker<span className="text-indigo-500">.AI</span></span>
           </div>
           {!state.data && hasKey && (
-            <div className="flex items-center gap-4">
-              <button className="px-5 py-2.5 bg-white text-black text-xs font-black rounded-full hover:bg-slate-200 transition-all shadow-xl">Creator Studio</button>
-            </div>
+            <button className="px-5 py-2.5 bg-white text-black text-xs font-black rounded-full hover:bg-slate-200 transition-all shadow-xl">Creator Studio</button>
           )}
         </div>
       </header>
@@ -293,62 +263,39 @@ export default function App() {
             <div className="max-w-7xl mx-auto px-6 text-center mb-24">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-8">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                Expert Manuscript Engine
+                Authority Engine Active
               </motion.div>
               
               <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto">
                 Authority, <span className="text-indigo-500">Instantly.</span>
               </motion.h1>
               
-              <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-12 leading-relaxed">
-                Professional ebook creation powered by high-reasoning Gemini models.
-              </motion.p>
-              
               {!hasKey ? (
-                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto glass-panel p-10 rounded-[2.5rem] border-indigo-500/20 shadow-2xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 -translate-y-16 translate-x-16 rotate-45"></div>
-                  
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto glass-panel p-12 rounded-[3rem] border-indigo-500/20 shadow-2xl">
                   <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mb-8 mx-auto">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L22 22m-5-5l4-4"/></svg>
                   </div>
-                  
-                  <h3 className="text-2xl font-black mb-3 tracking-tight">Activation Required</h3>
+                  <h3 className="text-2xl font-black mb-3 tracking-tight">Connect Your API Key</h3>
                   <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                    To maintain high-quality generation, users must select their own API key from a paid GCP project.
+                    To use the high-performance Gemini 3 Pro model, please select a valid paid API key from your project.
                   </p>
-                  
-                  <div className="space-y-4">
-                    <button onClick={handleConnectKey} className="w-full py-4 premium-gradient text-white font-black text-sm rounded-2xl shadow-xl hover:brightness-110 transition-all flex items-center justify-center gap-3 group">
-                      Initialize Studio Access
-                      <svg className="group-hover:translate-x-1 transition-transform" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-                    </button>
-                    
-                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-indigo-400 transition-colors">
-                      Gemini Billing Documentation ↗
-                    </a>
-                  </div>
-
-                  <div className="mt-10 pt-8 border-t border-white/5 grid grid-cols-2 gap-4">
-                    <div className="text-left">
-                      <div className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter mb-1">Security</div>
-                      <div className="text-[10px] text-slate-500 leading-tight">Keys are processed via secure studio protocols.</div>
-                    </div>
-                    <div className="text-left">
-                      <div className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter mb-1">Quality</div>
-                      <div className="text-[10px] text-slate-500 leading-tight">Enables Gemini 3 Pro expert manuscript reasoning.</div>
-                    </div>
-                  </div>
+                  <button onClick={handleConnectKey} className="w-full py-4 premium-gradient text-white font-black text-sm rounded-2xl shadow-xl hover:brightness-110 transition-all flex items-center justify-center gap-3">
+                    Connect API Key
+                  </button>
+                  <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block mt-6 text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-indigo-400 transition-colors">
+                    Billing Documentation ↗
+                  </a>
                 </motion.div>
               ) : (
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
+                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
                   <form onSubmit={handleGenerate} className="grid md:grid-cols-[1fr_auto] gap-2 p-2">
                     <div className="grid md:grid-cols-2 gap-4 p-4 text-left">
                       <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Core Topic</label>
-                        <input required type="text" placeholder="e.g. B2B Sales Ops" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
+                        <input required type="text" placeholder="e.g. Modern Sales" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Author Brand</label>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Brand Name</label>
                         <input required type="text" placeholder="Your Name" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
                       </div>
                     </div>
@@ -358,15 +305,9 @@ export default function App() {
               )}
               
               {error && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-12 p-8 glass-panel border-rose-500/50 rounded-3xl max-w-xl mx-auto text-left shadow-2xl">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    </div>
-                    <h3 className="text-lg font-black text-white tracking-tight leading-none">Diagnostic Alert</h3>
-                  </div>
-                  <p className="text-slate-400 text-sm leading-relaxed mb-6">{error}</p>
-                  <button onClick={() => { setHasKey(false); setError(null); }} className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors underline underline-offset-4 decoration-indigo-900">Reset Activation State</button>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-8 p-6 glass-panel border-rose-500/30 rounded-2xl max-w-xl mx-auto text-left">
+                   <p className="text-slate-400 text-sm leading-relaxed">{error}</p>
+                   <button onClick={() => { setHasKey(false); setError(null); }} className="mt-4 text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300">Switch Key</button>
                 </motion.div>
               )}
             </div>
@@ -418,7 +359,7 @@ export default function App() {
                         <div className="space-y-24">
                           {state.data.chapters.map((ch, idx) => (
                             <div key={idx} className="relative">
-                              <div className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500/50 mb-4">Module 0{idx + 1}</div>
+                              <div className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500/50 mb-4">Chapter 0{idx + 1}</div>
                               <h3 className="text-2xl font-black mb-6 text-white tracking-tight">{ch.title}</h3>
                               <div className="text-slate-400 leading-relaxed text-lg whitespace-pre-line font-light">{ch.content}</div>
                             </div>
@@ -430,11 +371,11 @@ export default function App() {
                         <div className="flex flex-col items-center text-center space-y-6">
                           <div className="space-y-2">
                             <h4 className="text-xl font-black text-white">Extend Your Manuscript</h4>
-                            <p className="text-slate-400 text-sm">Need more depth? Add a custom chapter before exporting.</p>
+                            <p className="text-slate-400 text-sm">Add custom chapters before exporting.</p>
                           </div>
                           <form onSubmit={handleAddChapter} className="w-full max-w-lg flex flex-col md:flex-row gap-3">
-                            <input type="text" placeholder="e.g. Case Studies, Advanced Strategies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
-                            <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl transition-all shadow-lg min-w-[140px]">
+                            <input type="text" placeholder="e.g. Case Studies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
+                            <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl shadow-lg min-w-[140px]">
                               {isAddingChapter ? 'Generating...' : 'Add Chapter'}
                             </button>
                           </form>
