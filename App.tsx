@@ -51,7 +51,8 @@ export default function App() {
       setActiveTab('cover');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
-      setError(err.message || 'Service temporarily unavailable.');
+      console.error("Generation failed:", err);
+      setError(err.message || 'The AI service is temporarily unavailable. Please check your API key.');
       setState(prev => ({ ...prev, isGenerating: false }));
     }
   };
@@ -79,7 +80,6 @@ export default function App() {
         } : null
       }));
       setNewChapterTopic('');
-      // Scroll to the new chapter
       setTimeout(() => {
         window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
       }, 100);
@@ -103,9 +103,8 @@ export default function App() {
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 25; 
       const contentWidth = pageWidth - (margin * 2);
-      const lineHeight = 7; // Approx 1.5 line height for 11pt font
+      const lineHeight = 7;
 
-      // 1. Cover Page Export
       const canvas = await html2canvas(coverEl, { 
         scale: 3, 
         useCORS: true,
@@ -115,7 +114,6 @@ export default function App() {
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
 
-      // 2. Introduction Page
       doc.addPage();
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(26);
@@ -143,14 +141,11 @@ export default function App() {
           cursorY = margin;
         }
         doc.text(lines, margin, cursorY);
-        cursorY += (lines.length * lineHeight) + lineHeight; // 1 blank line between paragraphs
+        cursorY += (lines.length * lineHeight) + lineHeight;
       });
 
-      // 3. Chapters (Each starts on a new page)
       state.data.chapters.forEach((ch, idx) => {
         doc.addPage();
-        
-        // 2 Blank lines before chapter title (approx 14mm)
         cursorY = margin + 14; 
         
         doc.setFont('helvetica', 'bold');
@@ -162,7 +157,6 @@ export default function App() {
         doc.setTextColor(0, 0, 0);
         doc.text(ch.title, margin, cursorY, { maxWidth: contentWidth });
         
-        // 1-2 Blank lines after title
         cursorY += 18; 
 
         doc.setFont('helvetica', 'normal');
@@ -177,11 +171,10 @@ export default function App() {
             cursorY = margin;
           }
           doc.text(lines, margin, cursorY);
-          cursorY += (lines.length * lineHeight) + lineHeight; // 1 blank line spacing
+          cursorY += (lines.length * lineHeight) + lineHeight;
         });
       });
 
-      // 4. Bonus Pack (New page per bonus)
       state.data.bonuses.forEach((bonus) => {
         doc.addPage();
         doc.setFont('helvetica', 'bold');
@@ -239,7 +232,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      {/* Off-screen capture for PDF */}
       {state.data && (
         <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
           <div id="pdf-export-cover-capture" style={{ width: '800px', height: '1131px' }}>
@@ -290,6 +282,17 @@ export default function App() {
                   <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg">Generate Ebook</button>
                 </form>
               </motion.div>
+              
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  className="mt-12 p-6 glass-panel border-rose-500/50 rounded-3xl max-w-xl mx-auto"
+                >
+                  <p className="text-rose-400 text-sm font-bold mb-2">Error Generating Ebook</p>
+                  <p className="text-slate-400 text-xs leading-relaxed">{error}</p>
+                </motion.div>
+              )}
             </div>
           </div>
         ) : (
@@ -347,7 +350,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Add Additional Chapter Section */}
                       <div className="glass-panel p-10 rounded-[2.5rem] border-slate-800/50 border-dashed border-2 bg-slate-900/10">
                         <div className="flex flex-col items-center text-center space-y-6">
                           <div className="space-y-2">
