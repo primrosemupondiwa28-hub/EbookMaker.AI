@@ -1,11 +1,14 @@
 
-import React, { useState, useRef } from 'react';
-import { EbookData, EbookState, CoverTemplateId } from './types.ts';
-import { generateEbook } from './services/geminiService.ts';
-import { CoverRenderer, ModernCover, BoldCover, ElegantCover } from './components/CoverTemplates.tsx';
+import React, { useState, useRef, useEffect } from 'react';
+import { EbookData, EbookState, CoverTemplateId, Chapter } from './types.ts';
+import { generateEbook, generateAdditionalChapter } from './services/geminiService.ts';
+import { CoverRenderer } from './components/CoverTemplates.tsx';
 import JSZip from 'jszip';
+import { motion, AnimatePresence } from 'framer-motion';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
-const Tones = ['Professional', 'Inspirational', 'Casual', 'Action-Oriented', 'Empathetic', 'Authoritative'];
+const Tones = ['Professional', 'Authoritative', 'Inspirational', 'Casual', 'Empathetic'];
 const CoverTemplates: CoverTemplateId[] = ['modern', 'bold', 'gradient', 'minimal', 'elegant', 'dark'];
 
 export default function App() {
@@ -24,16 +27,16 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<'content' | 'bonuses' | 'cover'>('cover');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isAddingChapter, setIsAddingChapter] = useState(false);
+  const [newChapterTopic, setNewChapterTopic] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
 
-  const formRef = useRef<HTMLDivElement>(null);
-  const whyRef = useRef<HTMLElement>(null);
-  const samplesRef = useRef<HTMLElement>(null);
-  const coverRef = useRef<HTMLDivElement>(null);
-
-  const scrollTo = (ref: React.RefObject<HTMLElement | null>) => {
-    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,490 +46,338 @@ export default function App() {
     setError(null);
 
     try {
-      const ebookData = await generateEbook(
-        form.topic, 
-        form.niche, 
-        form.brandName, 
-        form.tone
-      );
-      setState(prev => ({
-        ...prev,
-        data: ebookData,
-        isGenerating: false
-      }));
+      const ebookData = await generateEbook(form.topic, form.niche, form.brandName, form.tone);
+      setState(prev => ({ ...prev, data: ebookData, isGenerating: false }));
       setActiveTab('cover');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
-      console.error("Catch block error:", err);
-      setError(`Generation failed: ${err.message || 'The AI service is temporarily unavailable.'}`);
+      setError(err.message || 'Service temporarily unavailable.');
       setState(prev => ({ ...prev, isGenerating: false }));
     }
   };
 
-  const handleDownloadPDF = async () => {
-    if (!state.data || !coverRef.current) return;
-    setIsDownloading(true);
+  const handleAddChapter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!state.data || !newChapterTopic || isAddingChapter) return;
+
+    setIsAddingChapter(true);
+    setError(null);
 
     try {
-      const { default: jsPDF } = await import('jspdf');
-      const { default: html2canvas } = await import('html2canvas');
+      const newChapter = await generateAdditionalChapter(
+        state.data.title,
+        state.data.chapters,
+        newChapterTopic,
+        form.tone
+      );
+      
+      setState(prev => ({
+        ...prev,
+        data: prev.data ? {
+          ...prev.data,
+          chapters: [...prev.data.chapters, newChapter]
+        } : null
+      }));
+      setNewChapterTopic('');
+      // Scroll to the new chapter
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }, 100);
+    } catch (err: any) {
+      setError(err.message || "Could not add additional chapter.");
+    } finally {
+      setIsAddingChapter(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!state.data) return;
+    setIsDownloading(true);
+    
+    try {
+      const coverEl = document.getElementById('pdf-export-cover-capture');
+      if (!coverEl) throw new Error("Capture element not found");
 
       const doc = new jsPDF('p', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 20;
+      const margin = 25; 
       const contentWidth = pageWidth - (margin * 2);
+      const lineHeight = 7; // Approx 1.5 line height for 11pt font
 
-      const canvas = await html2canvas(coverRef.current, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      // 1. Cover Page Export
+      const canvas = await html2canvas(coverEl, { 
+        scale: 3, 
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#000000'
+      });
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
       doc.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
 
+      // 2. Introduction Page
       doc.addPage();
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(26);
-      doc.text('Table of Contents', margin, 40);
-      doc.setDrawColor(99, 102, 241);
-      doc.line(margin, 45, margin + 40, 45);
+      doc.setTextColor(0, 0, 0);
+      doc.text(state.data.title, margin, 45, { maxWidth: contentWidth });
       
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      let tocY = 60;
-      doc.text('Introduction', margin, tocY);
-      tocY += 10;
-      state.data.chapters.forEach((ch, i) => {
-        doc.text(`${i + 1}. ${ch.title}`, margin, tocY);
-        tocY += 8;
-        if (tocY > pageHeight - margin) {
-          doc.addPage();
-          tocY = margin;
-        }
-      });
+      doc.setFontSize(14);
+      doc.setTextColor(99, 102, 241);
+      doc.text(state.data.subtitle, margin, 58, { maxWidth: contentWidth });
+      
+      doc.setDrawColor(220, 220, 220);
+      doc.line(margin, 68, margin + 15, 68);
 
-      doc.addPage();
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(22);
-      doc.text('Introduction', margin, 35);
+      doc.setTextColor(40, 40, 40);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(11);
-      doc.setTextColor(80, 80, 80);
-      const introLines = doc.splitTextToSize(state.data.introduction, contentWidth);
-      doc.text(introLines, margin, 50, { lineHeightFactor: 1.5 });
+      
+      let cursorY = 82;
+      const introParagraphs = state.data.introduction.split('\n').filter(p => p.trim() !== '');
+      
+      introParagraphs.forEach(p => {
+        const lines = doc.splitTextToSize(p, contentWidth);
+        if (cursorY + (lines.length * lineHeight) > pageHeight - margin) {
+          doc.addPage();
+          cursorY = margin;
+        }
+        doc.text(lines, margin, cursorY);
+        cursorY += (lines.length * lineHeight) + lineHeight; // 1 blank line between paragraphs
+      });
 
-      doc.setTextColor(0, 0, 0);
-      state.data.chapters.forEach((chapter, index) => {
+      // 3. Chapters (Each starts on a new page)
+      state.data.chapters.forEach((ch, idx) => {
         doc.addPage();
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(18);
-        doc.text(`Chapter ${index + 1}: ${chapter.title}`, margin, 35);
-        doc.setDrawColor(200, 200, 200);
-        doc.line(margin, 40, margin + 20, 40);
         
+        // 2 Blank lines before chapter title (approx 14mm)
+        cursorY = margin + 14; 
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(120, 120, 120);
+        doc.text(`SECTION 0${idx + 1}`, margin, cursorY - 10);
+        
+        doc.setFontSize(22);
+        doc.setTextColor(0, 0, 0);
+        doc.text(ch.title, margin, cursorY, { maxWidth: contentWidth });
+        
+        // 1-2 Blank lines after title
+        cursorY += 18; 
+
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(11);
-        const lines = doc.splitTextToSize(chapter.content, contentWidth);
-        
-        let cursorY = 55;
-        lines.forEach((line: string) => {
-          if (cursorY > pageHeight - margin) {
+        doc.setTextColor(50, 50, 50);
+
+        const paragraphs = ch.content.split('\n').filter(p => p.trim() !== '');
+        paragraphs.forEach(p => {
+          const lines = doc.splitTextToSize(p, contentWidth);
+          if (cursorY + (lines.length * lineHeight) > pageHeight - margin) {
             doc.addPage();
             cursorY = margin;
           }
-          doc.text(line, margin, cursorY);
-          cursorY += 6.5;
+          doc.text(lines, margin, cursorY);
+          cursorY += (lines.length * lineHeight) + lineHeight; // 1 blank line spacing
         });
       });
 
-      doc.addPage();
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(20);
-      doc.text('Conversion Boosters', margin, 35);
-      
-      let bonusY = 55;
+      // 4. Bonus Pack (New page per bonus)
       state.data.bonuses.forEach((bonus) => {
-        if (bonusY > pageHeight - 60) {
-          doc.addPage();
-          bonusY = margin;
-        }
+        doc.addPage();
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.text(`${bonus.title} (${bonus.type})`, margin, bonusY);
-        bonusY += 8;
-        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(24);
+        doc.setTextColor(0, 0, 0);
+        doc.text(bonus.title, margin, 40);
+        
         doc.setFontSize(10);
-        doc.setTextColor(100, 100, 100);
+        doc.setTextColor(16, 185, 129);
+        doc.text(`[ ${bonus.type.toUpperCase()} ]`, margin, 48);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.setTextColor(80, 80, 80);
+        
         const descLines = doc.splitTextToSize(bonus.description, contentWidth);
-        doc.text(descLines, margin, bonusY);
-        bonusY += (descLines.length * 5) + 8;
+        doc.text(descLines, margin, 60);
         
         if (bonus.items) {
-          doc.setTextColor(50, 50, 50);
+          let itemY = 60 + (descLines.length * lineHeight) + 12;
           bonus.items.forEach(item => {
-            doc.text(`• ${item}`, margin + 5, bonusY);
-            bonusY += 6;
+            if (itemY > pageHeight - margin) {
+              doc.addPage();
+              itemY = margin;
+            }
+            doc.text(`• ${item}`, margin + 5, itemY, { maxWidth: contentWidth - 5 });
+            itemY += lineHeight;
           });
-          bonusY += 10;
         }
-        doc.setTextColor(0, 0, 0);
       });
 
-      const pageCount = doc.internal.pages.length;
-      for (let i = 2; i < pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(9);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`Page ${i - 1}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-      }
-
-      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Ebook.pdf`);
+      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Masterclass.pdf`);
     } catch (err) {
-      console.error("PDF download error:", err);
-      alert("Something went wrong generating your PDF.");
+      console.error("PDF Export Error:", err);
+      alert("PDF building failed. Ensure your browser allows canvas capturing.");
     } finally {
       setIsDownloading(false);
     }
-  };
-
-  const handleDownloadZip = async () => {
-    if (!state.data) return;
-    setIsDownloading(true);
-
-    try {
-      const zip = new JSZip();
-      const folderName = state.data.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const root = zip.folder(folderName);
-
-      if (root) {
-        root.file("00_Introduction.txt", state.data.introduction);
-        const chaptersFolder = root.folder("Chapters");
-        if (chaptersFolder) {
-          state.data.chapters.forEach((chapter, index) => {
-            const fileName = `Chapter_${(index + 1).toString().padStart(2, '0')}_${chapter.title.replace(/[^a-z0-9]/gi, '_')}.txt`;
-            chaptersFolder.file(fileName, chapter.content);
-          });
-        }
-
-        let bonusText = `BONUS ASSETS FOR: ${state.data.title}\n\n`;
-        state.data.bonuses.forEach((bonus, index) => {
-          bonusText += `${index + 1}. ${bonus.title} (${bonus.type})\n`;
-          bonusText += `${bonus.description}\n`;
-          if (bonus.items) {
-            bonusText += `Items:\n${bonus.items.map(item => `- ${item}`).join('\n')}\n`;
-          }
-          bonusText += `\n-------------------\n\n`;
-        });
-        root.file("Bonuses.txt", bonusText);
-
-        let fullContent = `${state.data.title.toUpperCase()}\n`;
-        fullContent += `${state.data.subtitle}\n`;
-        fullContent += `By: ${state.data.author}\n\n`;
-        fullContent += `INTRODUCTION\n\n${state.data.introduction}\n\n`;
-        state.data.chapters.forEach((chapter, index) => {
-          fullContent += `CHAPTER ${index + 1}: ${chapter.title}\n\n`;
-          fullContent += `${chapter.content}\n\n`;
-        });
-        root.file("Full_Ebook_Draft.txt", fullContent);
-
-        const readme = `EbookMaker.AI Asset Pack\nGenerated on: ${new Date().toLocaleDateString()}\nTopic: ${form.topic}\nNiche: ${form.niche}\nTone: ${form.tone}\n\nThank you for using EbookMaker.AI.`;
-        root.file("GENERATION_INFO.txt", readme);
-      }
-
-      const content = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(content);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${folderName}_pack.zip`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("Download error:", err);
-      alert("Failed to package the files.");
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
-  const reset = () => {
-    setState({
-      isGenerating: false,
-      data: null,
-      selectedCoverId: 'modern'
-    });
-    setForm({ topic: '', niche: '', brandName: '', tone: 'Professional' });
-    setError(null);
   };
 
   if (state.isGenerating) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-[#030712]">
-        <div className="relative mb-12">
-          <div className="w-32 h-32 border-4 border-indigo-500/20 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-32 h-32 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin shadow-[0_0_50px_rgba(99,102,241,0.3)]"></div>
-          <div className="absolute inset-0 flex items-center justify-center font-bold text-indigo-400">AI</div>
-        </div>
-        <h2 className="text-4xl font-black mb-4 gradient-text tracking-tight">Writing Expert Content...</h2>
-        <div className="max-w-md space-y-6">
-          <p className="text-zinc-400 text-lg leading-relaxed animate-pulse">
-            EbookMaker.AI is generating your expert asset. This may take a few seconds as we craft multiple high-quality chapters.
-          </p>
-          <div className="flex justify-center items-center gap-4 text-xs font-bold uppercase tracking-widest text-zinc-600">
-            <span>Researching</span>
-            <span className="w-1 h-1 bg-zinc-800 rounded-full"></span>
-            <span>Drafting</span>
-            <span className="w-1 h-1 bg-zinc-800 rounded-full"></span>
-            <span>Refining</span>
+      <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-8 text-center">
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md w-full">
+          <div className="relative w-24 h-24 mx-auto mb-10">
+            <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} className="absolute inset-0 border-4 border-t-indigo-500 rounded-full"></motion.div>
           </div>
-        </div>
+          <h2 className="text-3xl font-black mb-4 tracking-tight">Architecting Authority</h2>
+          <p className="text-slate-400 leading-relaxed mb-8 text-sm">Drafting 7 primary chapters with strict 15-sentence depth requirements and PDF-optimized formatting.</p>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#030712] text-zinc-100 pb-20 selection:bg-indigo-500/30">
-      <header className="max-w-7xl mx-auto px-6 py-8 flex justify-between items-center border-b border-white/5 bg-[#030712]/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="flex items-center gap-2 group cursor-pointer" onClick={reset}>
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center font-bold text-xl shadow-lg shadow-indigo-500/30">E</div>
-          <span className="text-xl font-bold tracking-tight">EbookMaker<span className="text-indigo-500">.AI</span></span>
+    <div className="min-h-screen">
+      {/* Off-screen capture for PDF */}
+      {state.data && (
+        <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+          <div id="pdf-export-cover-capture" style={{ width: '800px', height: '1131px' }}>
+            <CoverRenderer id={state.selectedCoverId} title={state.data.title} subtitle={state.data.subtitle} author={state.data.author} />
+          </div>
         </div>
-        {!state.data ? (
-          <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-zinc-400">
-            <button onClick={() => scrollTo(whyRef)} className="hover:text-white transition-colors">Why Authority?</button>
-            <button onClick={() => scrollTo(samplesRef)} className="hover:text-white transition-colors">Samples</button>
-            <button 
-              onClick={() => scrollTo(formRef)}
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full transition-all shadow-lg shadow-indigo-600/20"
-            >
-              Get Started
-            </button>
-          </nav>
-        ) : (
-          <button 
-            onClick={reset}
-            className="text-sm font-bold text-indigo-400 hover:text-indigo-300 px-6 py-2.5 rounded-full bg-indigo-500/5 border border-indigo-500/20"
-          >
-            + Create New
-          </button>
-        )}
+      )}
+
+      <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b ${scrolled ? 'bg-slate-950/80 backdrop-blur-xl border-slate-800 py-4' : 'bg-transparent border-transparent py-6'}`}>
+        <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setState({ ...state, data: null })}>
+            <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center font-black text-white shadow-lg">E</div>
+            <span className="text-lg font-black tracking-tighter">EbookMaker<span className="text-indigo-500">.AI</span></span>
+          </div>
+          {!state.data && (
+            <button className="px-5 py-2.5 bg-white text-black text-xs font-black rounded-full hover:bg-slate-200 transition-all shadow-xl">Creator Studio</button>
+          )}
+        </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6">
-        {error && (
-          <div className="mt-8 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-2xl text-center font-medium">
-            <span className="mr-2">⚠️</span> {error}
-          </div>
-        )}
-
+      <main>
         {!state.data ? (
-          <>
-            <div className="mt-12 md:mt-24 grid lg:grid-cols-2 gap-16 items-center">
-              <div>
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold uppercase tracking-widest mb-8">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                  Premium AI Platform
-                </div>
-                <h1 className="text-5xl md:text-7xl font-black leading-[1.05] mb-8 tracking-tight">
-                  Create <span className="gradient-text">expert</span> ebooks — <span className="text-white">instantly.</span>
-                </h1>
-                <p className="text-xl text-zinc-400 mb-12 leading-relaxed max-w-xl">
-                  The web's smartest engine for lead magnets. Generate 15 chapters of professional prose designed to position you as a market leader.
-                </p>
-                <div className="grid sm:grid-cols-2 gap-6 mb-12">
-                  {["15 Expert Chapters", "Professional Tone", "Instant Assets", "Custom Branding"].map((item, i) => (
-                    <div key={i} className="flex items-center gap-3 text-zinc-300 font-medium">
-                      <div className="w-6 h-6 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                        <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      {item}
+          <div className="pt-32 md:pt-48 pb-20">
+            <div className="max-w-7xl mx-auto px-6 text-center mb-24">
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-8">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                Next-Gen Content Builder
+              </motion.div>
+              <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto">
+                Authority, <span className="text-indigo-500">Instantly.</span>
+              </motion.h1>
+              <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-12 leading-relaxed">
+                Generate professional ebooks with strict PDF-safe layouts and authority-level content.
+              </motion.p>
+              
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
+                <form onSubmit={handleGenerate} className="grid md:grid-cols-[1fr_auto] gap-2 p-2">
+                  <div className="grid md:grid-cols-2 gap-4 p-4 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Core Topic</label>
+                      <input required type="text" placeholder="e.g. B2B Sales Ops" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              <div ref={formRef} className="glass p-8 md:p-10 rounded-[2.5rem] border border-white/10 shadow-2xl">
-                <form onSubmit={handleGenerate} className="space-y-8">
-                  <div className="space-y-3">
-                    <label className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Topic or Niche</label>
-                    <input 
-                      required
-                      type="text"
-                      placeholder="e.g., Digital Marketing Strategies"
-                      className="w-full bg-black/50 border border-white/10 rounded-2xl px-6 py-5 focus:ring-2 focus:ring-indigo-500 transition-all text-white outline-none"
-                      value={form.topic}
-                      onChange={(e) => setForm({...form, topic: e.target.value})}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <label className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Author Name</label>
-                      <input 
-                        required
-                        type="text"
-                        placeholder="e.g., Alex Rivers"
-                        className="w-full bg-black/50 border border-white/10 rounded-2xl px-6 py-5 focus:ring-2 focus:ring-indigo-500 transition-all text-white outline-none"
-                        value={form.brandName}
-                        onChange={(e) => setForm({...form, brandName: e.target.value})}
-                      />
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-sm font-bold text-zinc-400 uppercase tracking-widest">Tone</label>
-                      <select 
-                        className="w-full bg-black/50 border border-white/10 rounded-2xl px-6 py-5 focus:ring-2 focus:ring-indigo-500 transition-all text-white outline-none appearance-none"
-                        value={form.tone}
-                        onChange={(e) => setForm({...form, tone: e.target.value})}
-                      >
-                        {Tones.map(tone => <option key={tone} value={tone} className="bg-zinc-900">{tone}</option>)}
-                      </select>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Author Brand</label>
+                      <input required type="text" placeholder="Your Name" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
                     </div>
                   </div>
-                  <button 
-                    type="submit"
-                    className="w-full py-6 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-lg rounded-2xl shadow-xl transition-all active:scale-[0.98] flex items-center justify-center gap-4"
-                  >
-                    Build My Ebook
-                  </button>
+                  <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg">Generate Ebook</button>
                 </form>
-              </div>
+              </motion.div>
             </div>
-
-            <section ref={whyRef} className="mt-32 pt-20">
-              <div className="text-center max-w-3xl mx-auto mb-20">
-                <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tight">Generate <span className="text-indigo-500">Authority</span></h2>
-                <p className="text-zinc-400 text-lg">We don't just give you a list. We generate high-quality prose that builds trust with your readers.</p>
-              </div>
-              <div className="grid md:grid-cols-3 gap-8">
-                {[
-                  { title: "Deep Content", desc: "15 chapters of substantial information, not just bullet points.", icon: "📚" },
-                  { title: "Ready to Use", desc: "Download in PDF or ZIP format for immediate distribution.", icon: "🚀" },
-                  { title: "Expert Tone", desc: "Engineered to sound authoritative and professional.", icon: "💎" }
-                ].map((feature, idx) => (
-                  <div key={idx} className="glass p-10 rounded-[2.5rem] border border-white/5 hover:border-indigo-500/30 transition-all">
-                    <div className="text-4xl mb-6">{feature.icon}</div>
-                    <h3 className="text-2xl font-black mb-4">{feature.title}</h3>
-                    <p className="text-zinc-400 leading-relaxed">{feature.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </>
+          </div>
         ) : (
-          <div className="mt-8 grid lg:grid-cols-12 gap-10">
-            <div className="lg:col-span-4 space-y-6">
-              <div className="glass p-8 rounded-3xl border border-white/5 sticky top-24">
-                <div className="flex flex-col gap-3 mb-10">
-                  <button 
-                    onClick={() => setActiveTab('cover')}
-                    className={`flex items-center gap-4 px-6 py-4 rounded-2xl transition-all font-bold ${activeTab === 'cover' ? 'bg-indigo-600 text-white shadow-xl' : 'hover:bg-white/5 text-zinc-400'}`}
-                  >
-                    Cover Design
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('content')}
-                    className={`flex items-center gap-4 px-6 py-4 rounded-2xl transition-all font-bold ${activeTab === 'content' ? 'bg-indigo-600 text-white shadow-xl' : 'hover:bg-white/5 text-zinc-400'}`}
-                  >
-                    Full Manuscript
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('bonuses')}
-                    className={`flex items-center gap-4 px-6 py-4 rounded-2xl transition-all font-bold ${activeTab === 'bonuses' ? 'bg-indigo-600 text-white shadow-xl' : 'hover:bg-white/5 text-zinc-400'}`}
-                  >
-                    Bonus Package
-                  </button>
-                </div>
-                <div className="space-y-4 pt-6 border-t border-white/5">
-                  <button 
-                    onClick={handleDownloadPDF}
-                    disabled={isDownloading}
-                    className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900 text-white font-black rounded-2xl flex items-center justify-center gap-3 transition-all"
-                  >
-                    {isDownloading ? "..." : "Download PDF"}
-                  </button>
-                  <button 
-                    onClick={handleDownloadZip}
-                    disabled={isDownloading}
-                    className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 text-zinc-300 font-bold rounded-2xl flex items-center justify-center gap-3 transition-all"
-                  >
-                    Download ZIP
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-8">
-              {activeTab === 'cover' && (
-                <div className="flex flex-col items-center">
-                  <div ref={coverRef} className="w-full max-w-md shadow-2xl rounded-3xl overflow-hidden">
-                    <CoverRenderer 
-                      id={state.selectedCoverId} 
-                      title={state.data.title} 
-                      subtitle={state.data.subtitle} 
-                      author={state.data.author} 
-                    />
+          <div className="pt-24 pb-20">
+            <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-[300px_1fr] gap-12">
+              <aside className="space-y-8">
+                <div className="glass-panel p-6 rounded-3xl sticky top-28 border-slate-800">
+                  <div className="space-y-1 mb-8">
+                    <button onClick={() => setActiveTab('cover')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'cover' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Cover Design</button>
+                    <button onClick={() => setActiveTab('content')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'content' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Manuscript</button>
+                    <button onClick={() => setActiveTab('bonuses')} className={`w-full text-left px-5 py-3.5 rounded-2xl text-sm font-bold transition-all ${activeTab === 'bonuses' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-900'}`}>Bonus Assets</button>
                   </div>
-                  <div className="mt-12 w-full glass p-8 rounded-[2rem]">
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
-                      {CoverTemplates.map((template) => (
-                        <button 
-                          key={template}
-                          onClick={() => setState(prev => ({ ...prev, selectedCoverId: template }))}
-                          className={`aspect-[3/4] rounded-xl overflow-hidden border-2 transition-all ${state.selectedCoverId === template ? 'border-indigo-500 scale-105' : 'border-transparent opacity-50'}`}
-                        >
-                          <div className="scale-[0.4] origin-top-left w-[250%] h-[250%] pointer-events-none">
-                             <CoverRenderer id={template} title={state.data!.title} subtitle={state.data!.subtitle} author={state.data!.author} />
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                  <div className="pt-6 border-t border-slate-800 space-y-3">
+                    <button onClick={handleDownloadPDF} disabled={isDownloading} className="w-full py-4 bg-white text-black font-black text-sm rounded-2xl hover:bg-slate-100 transition-all disabled:opacity-50">{isDownloading ? 'Building PDF...' : 'Export Final PDF'}</button>
+                    <button onClick={() => setState({ ...state, data: null })} className="w-full py-3 bg-slate-900 text-slate-400 font-bold text-xs rounded-2xl hover:bg-slate-800 transition-all">Start Over</button>
                   </div>
                 </div>
-              )}
+              </aside>
 
-              {activeTab === 'content' && (
-                <div className="space-y-12 pb-20">
-                  <div className="glass p-10 md:p-16 rounded-[3rem] shadow-2xl">
-                    <h2 className="text-5xl font-black mb-4">{state.data.title}</h2>
-                    <p className="text-2xl text-indigo-400 mb-12">{state.data.subtitle}</p>
-                    <div className="prose prose-invert max-w-none">
-                      <div className="mb-20 italic text-zinc-400 text-xl border-l-4 border-indigo-500 pl-8">
-                        {state.data.introduction}
+              <div className="min-h-[80vh]">
+                <AnimatePresence mode="wait">
+                  {activeTab === 'cover' && (
+                    <motion.div key="cover" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="flex flex-col items-center">
+                      <div className="w-full max-w-sm shadow-2xl rounded-2xl overflow-hidden border border-white/5 indigo-glow">
+                        <CoverRenderer id={state.selectedCoverId} title={state.data.title} subtitle={state.data.subtitle} author={state.data.author} />
                       </div>
-                      <div className="space-y-20">
-                        {state.data.chapters.map((chapter, idx) => (
-                          <div key={idx} className="relative pt-12">
-                             <h4 className="text-3xl font-black mb-6 text-white">Chapter {idx + 1}: {chapter.title}</h4>
-                             <div className="text-zinc-400 leading-relaxed whitespace-pre-line text-lg">
-                                {chapter.content}
-                             </div>
-                          </div>
+                      <div className="mt-12 w-full grid grid-cols-3 md:grid-cols-6 gap-4">
+                        {CoverTemplates.map((template) => (
+                          <button key={template} onClick={() => setState({ ...state, selectedCoverId: template })} className={`aspect-[3/4] rounded-xl overflow-hidden border-2 transition-all ${state.selectedCoverId === template ? 'border-indigo-500 scale-105 shadow-xl' : 'border-transparent opacity-40 hover:opacity-100'}`}>
+                            <div className="scale-[0.3] origin-top-left w-[333%] h-[333%] pointer-events-none">
+                              <CoverRenderer id={template} title={state.data!.title} subtitle={state.data!.subtitle} author={state.data!.author} />
+                            </div>
+                          </button>
                         ))}
                       </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                    </motion.div>
+                  )}
 
-              {activeTab === 'bonuses' && (
-                <div className="grid grid-cols-1 gap-8">
-                  {state.data.bonuses.map((bonus, idx) => (
-                    <div key={idx} className="glass p-10 rounded-[2.5rem] border-l-8 border-emerald-500">
-                      <h3 className="text-3xl font-black mb-4">{bonus.title}</h3>
-                      <p className="text-zinc-400 text-lg mb-8 leading-relaxed">{bonus.description}</p>
-                      {bonus.items && (
-                        <ul className="grid sm:grid-cols-2 gap-4">
-                          {bonus.items.map((item, i) => (
-                            <li key={i} className="flex items-center gap-3 text-zinc-300">
-                              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                              {item}
-                            </li>
+                  {activeTab === 'content' && (
+                    <motion.div key="content" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-3xl mx-auto space-y-12">
+                      <div className="glass-panel p-12 md:p-20 rounded-[3rem] border-slate-800/50">
+                        <div className="mb-16">
+                          <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tight">{state.data.title}</h2>
+                          <p className="text-xl text-indigo-400 font-medium italic mb-12">{state.data.subtitle}</p>
+                          <div className="text-slate-300 leading-relaxed text-lg whitespace-pre-line italic border-l-4 border-slate-800 pl-8">{state.data.introduction}</div>
+                        </div>
+                        <div className="space-y-24">
+                          {state.data.chapters.map((ch, idx) => (
+                            <div key={idx} className="relative">
+                              <div className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500/50 mb-4">Module 0{idx + 1}</div>
+                              <h3 className="text-2xl font-black mb-6 text-white tracking-tight">{ch.title}</h3>
+                              <div className="text-slate-400 leading-relaxed text-lg whitespace-pre-line font-light">{ch.content}</div>
+                            </div>
                           ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+                        </div>
+                      </div>
+
+                      {/* Add Additional Chapter Section */}
+                      <div className="glass-panel p-10 rounded-[2.5rem] border-slate-800/50 border-dashed border-2 bg-slate-900/10">
+                        <div className="flex flex-col items-center text-center space-y-6">
+                          <div className="space-y-2">
+                            <h4 className="text-xl font-black text-white">Extend Your Manuscript</h4>
+                            <p className="text-slate-400 text-sm">Need more depth? Add a custom custom chapter before exporting.</p>
+                          </div>
+                          <form onSubmit={handleAddChapter} className="w-full max-w-lg flex flex-col md:flex-row gap-3">
+                            <input type="text" placeholder="e.g. Case Studies, Advanced Strategies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
+                            <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl transition-all shadow-lg min-w-[140px]">
+                              {isAddingChapter ? 'Generating...' : 'Add Chapter'}
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {activeTab === 'bonuses' && (
+                    <motion.div key="bonuses" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-6">
+                      {state.data.bonuses.map((bonus, idx) => (
+                        <div key={idx} className="glass-panel p-10 rounded-[2.5rem] border-slate-800 group hover:border-indigo-500/20 transition-all">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full mb-4 inline-block">{bonus.type}</span>
+                          <h3 className="text-3xl font-black tracking-tight mb-4">{bonus.title}</h3>
+                          <p className="text-slate-400 text-lg leading-relaxed">{bonus.description}</p>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
         )}

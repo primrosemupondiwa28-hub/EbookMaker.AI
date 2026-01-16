@@ -4,40 +4,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EbookMaker.AI | Professional AI Ebook Generator & Digital Asset Creator</title>
+    <title>EbookMaker.AI | Enterprise AI Content Generation</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-primary: #020617;
+            --surface: #0f172a;
+            --border: #1e293b;
+        }
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #030712;
-            color: #f9fafb;
+            background-color: var(--bg-primary);
+            color: #f8fafc;
+            overflow-x: hidden;
         }
-        .glass {
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
-        .gradient-text {
-            background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
+        .premium-gradient {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
+        }
+        .text-gradient {
+            background: linear-gradient(135deg, #f8fafc 0%, #94a3b8 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        ::-webkit-scrollbar {
-            width: 8px;
+        .indigo-glow {
+            box-shadow: 0 0 40px -10px rgba(99, 102, 241, 0.3);
         }
-        ::-webkit-scrollbar-track {
-            background: #030712;
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
         }
-        ::-webkit-scrollbar-thumb {
-            background: #1f2937;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #374151;
-        }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+        
+        /* Custom scrollbar for professional feel */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
 <script type="importmap">
 {
@@ -48,7 +58,8 @@
     "@google/genai": "https://esm.sh/@google/genai@^1.36.0",
     "jszip": "https://esm.sh/jszip@^3.10.1",
     "jspdf": "https://esm.sh/jspdf@^2.5.1",
-    "html2canvas": "https://esm.sh/html2canvas@^1.4.1"
+    "html2canvas": "https://esm.sh/html2canvas@^1.4.1",
+    "framer-motion": "https://esm.sh/framer-motion@^11.0.0"
   }
 }
 </script>
