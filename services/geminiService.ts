@@ -3,14 +3,14 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { EbookData, Chapter } from "../types.ts";
 
 /**
- * Creates a fresh AI instance using the current environment key.
+ * Creates a Gemini client. The API_KEY is obtained exclusively from the environment.
  */
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
-  if (!apiKey || apiKey === 'undefined') {
-    throw new Error("API_KEY_MISSING");
+  if (!apiKey) {
+    throw new Error("The API_KEY environment variable is not configured. Please ensure it is set in your environment.");
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: apiKey });
 };
 
 export const generateEbook = async (
@@ -22,7 +22,7 @@ export const generateEbook = async (
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: `Generate a high-authority ebook for "${brandName}" in the "${niche}" niche about "${topic}" with a "${tone}" tone.
 
 Requirements:
@@ -30,7 +30,6 @@ Requirements:
 2. Structure: Captivating title, subtitle, introduction, and bonuses.
 3. Content: Expert depth, professional formatting, JSON output only.`,
       config: {
-        thinkingConfig: { thinkingBudget: 4000 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -73,9 +72,8 @@ Requirements:
     if (!text) throw new Error("Empty response from AI.");
     return JSON.parse(text) as EbookData;
   } catch (err: any) {
-    if (err.message === "API_KEY_MISSING") throw err;
     console.error("Gemini Error:", err);
-    throw new Error(err.message || "Failed to generate ebook content.");
+    throw new Error(err.message || "Failed to generate ebook. Please ensure your API key is valid and active.");
   }
 };
 
@@ -88,10 +86,9 @@ export const generateAdditionalChapter = async (
   try {
     const ai = getAIClient();
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: `Add a new chapter to "${ebookTitle}" about "${newChapterTopic}". Maintaining tone: ${tone}. JSON output.`,
       config: {
-        thinkingConfig: { thinkingBudget: 2000 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -108,7 +105,6 @@ export const generateAdditionalChapter = async (
     if (!text) throw new Error("Empty response from AI.");
     return JSON.parse(text) as Chapter;
   } catch (err: any) {
-    if (err.message === "API_KEY_MISSING") throw err;
     console.error("Gemini Error:", err);
     throw new Error(err.message || "Failed to generate additional chapter.");
   }

@@ -10,10 +10,6 @@ import html2canvas from 'html2canvas';
 const CoverTemplates: CoverTemplateId[] = ['modern', 'bold', 'gradient', 'minimal', 'elegant', 'dark'];
 
 export default function App() {
-  // Check if a key is already provided by the environment
-  const isKeyInEnv = !!process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '';
-  const [hasKey, setHasKey] = useState<boolean>(isKeyInEnv);
-  
   const [state, setState] = useState<EbookState>({
     isGenerating: false,
     data: null,
@@ -37,40 +33,8 @@ export default function App() {
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
-    
-    // Check if the studio already has a key selected
-    const checkStudioStatus = async () => {
-      try {
-        const studio = (window as any).aistudio;
-        if (!hasKey && studio && typeof studio.hasSelectedApiKey === 'function') {
-          const selected = await studio.hasSelectedApiKey();
-          if (selected) setHasKey(true);
-        }
-      } catch (e) {
-        console.debug("Studio key check skipped or failed", e);
-      }
-    };
-    checkStudioStatus();
-    
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [hasKey]);
-
-  const handleConnectKey = async () => {
-    try {
-      const studio = (window as any).aistudio;
-      if (studio && typeof studio.openSelectKey === 'function') {
-        await studio.openSelectKey();
-        // Proceed immediately as per SDK guidelines
-        setHasKey(true);
-        setError(null);
-      } else {
-        throw new Error("Selection interface not found");
-      }
-    } catch (err) {
-      console.error("Key selection failed:", err);
-      setError("Please ensure you are in a supported environment to connect your API key.");
-    }
-  };
+  }, []);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,13 +50,7 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error("Generation failed:", err);
-      
-      if (err.message === "API_KEY_MISSING" || err.message?.includes("not found")) {
-        setHasKey(false);
-        setError("API Key verification failed. Please connect a valid paid project API key via the selection dialog.");
-      } else {
-        setError(err.message || 'Generation failed. Please try again.');
-      }
+      setError(err.message || 'Generation failed. Please check your API key and network connection.');
       setState(prev => ({ ...prev, isGenerating: false }));
     }
   };
@@ -227,7 +185,7 @@ export default function App() {
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} className="absolute inset-0 border-4 border-t-indigo-500 rounded-full"></motion.div>
           </div>
           <h2 className="text-3xl font-black mb-4 tracking-tight">Writing Your Manuscript</h2>
-          <p className="text-slate-400 leading-relaxed text-sm">Gemini 3 Pro is architecting expert-level chapters. This may take a minute.</p>
+          <p className="text-slate-400 leading-relaxed text-sm">Gemini AI is crafting expert chapters. This usually takes 30-60 seconds.</p>
         </motion.div>
       </div>
     );
@@ -249,9 +207,6 @@ export default function App() {
             <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center font-black text-white shadow-lg">E</div>
             <span className="text-lg font-black tracking-tighter">EbookMaker<span className="text-indigo-500">.AI</span></span>
           </div>
-          {!state.data && hasKey && (
-            <button className="px-5 py-2.5 bg-white text-black text-xs font-black rounded-full hover:bg-slate-200 transition-all shadow-xl">Creator Studio</button>
-          )}
         </div>
       </header>
 
@@ -261,61 +216,33 @@ export default function App() {
             <div className="max-w-7xl mx-auto px-6 text-center mb-24">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-8">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                Authority Engine Active
+                Instant Generation Engine
               </motion.div>
               
               <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto">
                 Authority, <span className="text-indigo-500">Instantly.</span>
               </motion.h1>
-              
-              {!hasKey ? (
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto glass-panel p-12 rounded-[3rem] border-indigo-500/20 shadow-2xl overflow-hidden relative">
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 -translate-y-16 translate-x-16 rotate-45"></div>
-                  
-                  <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mb-8 mx-auto">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L22 22m-5-5l4-4"/></svg>
-                  </div>
-                  
-                  <h3 className="text-2xl font-black mb-3 tracking-tight">Connect Your API Key</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed mb-8">
-                    To maintain high-quality generation, users must select their own API key from a paid GCP project.
-                  </p>
-                  
-                  <button onClick={handleConnectKey} className="w-full py-4 premium-gradient text-white font-black text-sm rounded-2xl shadow-xl hover:brightness-110 transition-all flex items-center justify-center gap-3">
-                    Select Your API Key
-                  </button>
-                  
-                  <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
-                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-indigo-400 transition-colors">
-                      Gemini Billing Documentation ↗
-                    </a>
-                    <p className="text-[10px] text-slate-600 leading-tight text-center">
-                      Selected keys are handled securely by the environment. Your privacy is a priority.
-                    </p>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
-                  <form onSubmit={handleGenerate} className="grid md:grid-cols-[1fr_auto] gap-2 p-2">
-                    <div className="grid md:grid-cols-2 gap-4 p-4 text-left">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Core Topic</label>
-                        <input required type="text" placeholder="e.g. Modern Sales" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Brand Name</label>
-                        <input required type="text" placeholder="Your Name" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
-                      </div>
+
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
+                <form onSubmit={handleGenerate} className="grid md:grid-cols-[1fr_auto] gap-2 p-2">
+                  <div className="grid md:grid-cols-2 gap-4 p-4 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Core Topic</label>
+                      <input required type="text" placeholder="e.g. Passive Income" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
                     </div>
-                    <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg">Generate Ebook</button>
-                  </form>
-                </motion.div>
-              )}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Author Name</label>
+                      <input required type="text" placeholder="Your Name" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.brandName} onChange={(e) => setForm({...form, brandName: e.target.value})} />
+                    </div>
+                  </div>
+                  <button type="submit" className="h-full px-10 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-sm rounded-[1.8rem] transition-all flex items-center justify-center shadow-lg">Generate Ebook</button>
+                </form>
+              </motion.div>
               
               {error && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-8 p-6 glass-panel border-rose-500/30 rounded-2xl max-w-xl mx-auto text-left">
-                   <p className="text-slate-400 text-sm leading-relaxed">{error}</p>
-                   <button onClick={() => { setHasKey(false); setError(null); }} className="mt-4 text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300">Try Different Key</button>
+                   <p className="text-rose-400 text-sm leading-relaxed font-medium">Error: {error}</p>
+                   <p className="text-slate-500 text-xs mt-2">Ensure your API_KEY environment variable is correctly set in your project settings.</p>
                 </motion.div>
               )}
             </div>
@@ -379,10 +306,10 @@ export default function App() {
                         <div className="flex flex-col items-center text-center space-y-6">
                           <div className="space-y-2">
                             <h4 className="text-xl font-black text-white">Extend Your Manuscript</h4>
-                            <p className="text-slate-400 text-sm">Add custom chapters before exporting.</p>
+                            <p className="text-slate-400 text-sm">Add custom chapters to your book.</p>
                           </div>
                           <form onSubmit={handleAddChapter} className="w-full max-w-lg flex flex-col md:flex-row gap-3">
-                            <input type="text" placeholder="e.g. Case Studies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
+                            <input type="text" placeholder="e.g. Advanced Strategies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
                             <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl shadow-lg min-w-[140px]">
                               {isAddingChapter ? 'Generating...' : 'Add Chapter'}
                             </button>
