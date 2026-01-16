@@ -8,42 +8,40 @@ export const generateEbook = async (
   brandName: string,
   tone: string
 ): Promise<EbookData> => {
+  // Always create a new instance to pick up the most recent key from the selection dialog
   const apiKey = process.env.API_KEY;
   
-  // Validate key BEFORE initializing the SDK to prevent the browser crash
   if (!apiKey) {
-    throw new Error("API_KEY is missing. Please ensure you have added 'API_KEY' to your Vercel environment variables and redeployed.");
+    throw new Error("No API Key detected. Please click 'Connect API Key' to continue.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview', // Using Pro for complex, high-quality writing
       contents: `Act as a world-class author and content strategist. Generate a high-authority ebook for "${brandName}" in the "${niche}" niche about "${topic}" with a "${tone}" tone.
 
 CRITICAL CONTENT REQUIREMENTS (STRICT):
-1. CHAPTERS: Exactly 7 chapters. Each chapter MUST be at least 15 sentences long.
-2. INTRODUCTION: At least 10 sentences.
+1. CHAPTERS: Exactly 7 chapters. Each chapter MUST be substantial and provide expert-level depth.
+2. INTRODUCTION: Compelling and at least 10 sentences.
 3. MANUSCRIPT RULES:
    - Use short, readable paragraphs (3-4 sentences each).
    - Avoid long compound sentences and complex jargon.
    - Leave clear separation between paragraphs in the text.
-   - Each chapter must provide deep-dive expertise, not just surface-level tips.
+   - Provide deep-dive expertise, not surface-level tips.
 
 STRUCTURE: 
 - Captivating Title: Professional, short, and punchy (max 6 words).
 - Descriptive Subtitle: Elaborate on the value proposition.
-- 3 Bonus Assets: Checklists or guides. Each bonus must have a title, type, and detailed description.
+- 3 Bonus Assets: Practical tools (checklists, guides, etc.) that add real value.
 
 PDF-SAFE LAYOUT CONSTRAINTS:
 - No markdown tables or code blocks.
-- Bullet points must be concise and not overflow page width.
-- Chapter titles must be short (1-2 lines).
-
-Output strictly as a valid JSON object matching the schema.`,
+- Bullet points must be concise.
+- All output must be valid JSON.`,
       config: {
-        thinkingConfig: { thinkingBudget: 0 },
+        thinkingConfig: { thinkingBudget: 4000 }, // High reasoning for better structure
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -102,35 +100,26 @@ export const generateAdditionalChapter = async (
   tone: string
 ): Promise<Chapter> => {
   const apiKey = process.env.API_KEY;
-  
-  if (!apiKey) {
-    throw new Error("API_KEY is missing.");
-  }
+  if (!apiKey) throw new Error("API Key missing.");
 
   const ai = new GoogleGenAI({ apiKey });
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: `You are extending a high-authority ebook titled "${ebookTitle}".
-The existing chapters cover: ${existingChapters.map(c => c.title).join(', ')}.
 Generate a NEW chapter focusing on: "${newChapterTopic}".
-
-STRICT MANUSCRIPT REQUIREMENTS:
-1. CONTENT LENGTH: Must be AT LEAST 15 sentences long.
-2. TONE: Maintain a "${tone}" tone consistent with the rest of the book.
-3. FORMATTING: Use short paragraphs (3-4 sentences). Leave space between them.
-4. PDF-SAFETY: No markdown, no tables, no oversized words.
-5. QUALITY: Provide expert-level depth.
+Maintain a "${tone}" tone and expert depth.
 
 Output strictly as a valid JSON object.`,
       config: {
+        thinkingConfig: { thinkingBudget: 2000 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            title: { type: Type.STRING, description: "A punchy chapter title (max 2 lines)" },
-            content: { type: Type.STRING, description: "The full chapter content (minimum 15 sentences)" }
+            title: { type: Type.STRING },
+            content: { type: Type.STRING }
           },
           required: ["title", "content"]
         }
