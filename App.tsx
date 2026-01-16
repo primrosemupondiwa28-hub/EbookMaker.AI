@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { EbookData, EbookState, CoverTemplateId, Chapter } from './types.ts';
 import { generateEbook, generateAdditionalChapter } from './services/geminiService.ts';
 import { CoverRenderer } from './components/CoverTemplates.tsx';
@@ -7,13 +7,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
-// Removed redundant and conflicting declare global for aistudio as it's already provided by the environment
-
-const Tones = ['Professional', 'Authoritative', 'Inspirational', 'Casual', 'Empathetic'];
 const CoverTemplates: CoverTemplateId[] = ['modern', 'bold', 'gradient', 'minimal', 'elegant', 'dark'];
 
 export default function App() {
-  const [hasKey, setHasKey] = useState<boolean>(!!process.env.API_KEY);
+  // Check if API_KEY is present in process.env (as configured in Vercel)
+  const isKeyInEnv = !!process.env.API_KEY && process.env.API_KEY !== 'undefined';
+  const [hasKey, setHasKey] = useState<boolean>(isKeyInEnv);
+  
   const [state, setState] = useState<EbookState>({
     isGenerating: false,
     data: null,
@@ -38,28 +38,29 @@ export default function App() {
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     
-    // Check for key on mount
-    const checkKey = async () => {
-      // Cast window.aistudio to any to avoid TypeScript errors if the definition is not fully aligned or visible
-      if (typeof (window as any).aistudio !== 'undefined') {
+    const checkStudioKey = async () => {
+      // If we don't have an env key, check if a key was selected in the studio dialog
+      if (!isKeyInEnv && typeof (window as any).aistudio !== 'undefined') {
         const selected = await (window as any).aistudio.hasSelectedApiKey();
         if (selected) setHasKey(true);
       }
     };
-    checkKey();
+    checkStudioKey();
     
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [isKeyInEnv]);
 
   const handleConnectKey = async () => {
-    // Cast window.aistudio to any to avoid TypeScript errors
     if (typeof (window as any).aistudio !== 'undefined') {
-      await (window as any).aistudio.openSelectKey();
-      // Assume success as per SDK guidelines to avoid race conditions
-      setHasKey(true);
-      setError(null);
+      try {
+        await (window as any).aistudio.openSelectKey();
+        setHasKey(true);
+        setError(null);
+      } catch (err) {
+        console.error("Key selection failed:", err);
+      }
     } else {
-      setError("AI Studio environment not detected. Ensure you are running in a supported context.");
+      setError("Studio environment not detected. If you are the developer, ensure API_KEY is set in your environment variables. Users can normally use the 'Select Key' dialog in supported preview environments.");
     }
   };
 
@@ -77,11 +78,14 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error("Generation failed:", err);
-      // If entity not found or key missing, reset key state
-      if (err.message?.includes("not found") || err.message?.includes("API_KEY")) {
+      
+      // Handle the case where the key is missing or invalid
+      if (err.message === "API_KEY_MISSING" || err.message?.includes("Requested entity was not found")) {
         setHasKey(false);
+        setError("API Key verification failed. Please ensure a valid paid API key is selected.");
+      } else {
+        setError(err.message || 'The AI service is temporarily unavailable.');
       }
-      setError(err.message || 'The AI service is temporarily unavailable.');
       setState(prev => ({ ...prev, isGenerating: false }));
     }
   };
@@ -275,13 +279,8 @@ export default function App() {
             <div className="w-8 h-8 premium-gradient rounded-lg flex items-center justify-center font-black text-white shadow-lg">E</div>
             <span className="text-lg font-black tracking-tighter">EbookMaker<span className="text-indigo-500">.AI</span></span>
           </div>
-          {!state.data && (
+          {!state.data && hasKey && (
             <div className="flex items-center gap-4">
-               {!hasKey && (
-                <button onClick={handleConnectKey} className="px-4 py-2 bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-full hover:bg-indigo-500/20 transition-all">
-                  Connect API Key
-                </button>
-              )}
               <button className="px-5 py-2.5 bg-white text-black text-xs font-black rounded-full hover:bg-slate-200 transition-all shadow-xl">Creator Studio</button>
             </div>
           )}
@@ -294,24 +293,51 @@ export default function App() {
             <div className="max-w-7xl mx-auto px-6 text-center mb-24">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-8">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                Enterprise Authority Builder
+                Expert Manuscript Engine
               </motion.div>
+              
               <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto">
                 Authority, <span className="text-indigo-500">Instantly.</span>
               </motion.h1>
+              
               <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-lg md:text-xl text-slate-400 max-w-2xl mx-auto mb-12 leading-relaxed">
-                Generate professional ebooks with strict PDF-safe layouts and expert-level content powered by Gemini 3 Pro.
+                Professional ebook creation powered by high-reasoning Gemini models.
               </motion.p>
               
               {!hasKey ? (
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="max-w-md mx-auto glass-panel p-8 rounded-[2rem] border-indigo-500/20 shadow-2xl">
-                  <h3 className="text-lg font-black mb-2 tracking-tight">Setup Required</h3>
-                  <p className="text-slate-400 text-xs leading-relaxed mb-6">Connect your Gemini API key to access the Expert Manuscript engine.</p>
-                  <button onClick={handleConnectKey} className="w-full py-4 premium-gradient text-white font-black text-sm rounded-2xl shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>
-                    Authorize Studio Access
-                  </button>
-                  <p className="mt-4 text-[10px] text-slate-500">Selected keys are encrypted and processed locally.</p>
+                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto glass-panel p-10 rounded-[2.5rem] border-indigo-500/20 shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 -translate-y-16 translate-x-16 rotate-45"></div>
+                  
+                  <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 mb-8 mx-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  </div>
+                  
+                  <h3 className="text-2xl font-black mb-3 tracking-tight">Activation Required</h3>
+                  <p className="text-slate-400 text-sm leading-relaxed mb-8">
+                    To maintain high-quality generation, users must select their own API key from a paid GCP project.
+                  </p>
+                  
+                  <div className="space-y-4">
+                    <button onClick={handleConnectKey} className="w-full py-4 premium-gradient text-white font-black text-sm rounded-2xl shadow-xl hover:brightness-110 transition-all flex items-center justify-center gap-3 group">
+                      Initialize Studio Access
+                      <svg className="group-hover:translate-x-1 transition-transform" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                    </button>
+                    
+                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:text-indigo-400 transition-colors">
+                      Gemini Billing Documentation ↗
+                    </a>
+                  </div>
+
+                  <div className="mt-10 pt-8 border-t border-white/5 grid grid-cols-2 gap-4">
+                    <div className="text-left">
+                      <div className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter mb-1">Security</div>
+                      <div className="text-[10px] text-slate-500 leading-tight">Keys are processed via secure studio protocols.</div>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter mb-1">Quality</div>
+                      <div className="text-[10px] text-slate-500 leading-tight">Enables Gemini 3 Pro expert manuscript reasoning.</div>
+                    </div>
+                  </div>
                 </motion.div>
               ) : (
                 <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.3 }} className="max-w-3xl mx-auto glass-panel p-2 rounded-[2.5rem] indigo-glow">
@@ -337,10 +363,10 @@ export default function App() {
                     <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500">
                       <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                     </div>
-                    <h3 className="text-lg font-black text-white tracking-tight leading-none">Studio Notice</h3>
+                    <h3 className="text-lg font-black text-white tracking-tight leading-none">Diagnostic Alert</h3>
                   </div>
                   <p className="text-slate-400 text-sm leading-relaxed mb-6">{error}</p>
-                  <button onClick={() => { setHasKey(false); setError(null); }} className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors underline underline-offset-4">Reset Key Connection</button>
+                  <button onClick={() => { setHasKey(false); setError(null); }} className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors underline underline-offset-4 decoration-indigo-900">Reset Activation State</button>
                 </motion.div>
               )}
             </div>
