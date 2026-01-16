@@ -50,7 +50,14 @@ export default function App() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: any) {
       console.error("Generation failed:", err);
-      setError(err.message || 'Generation failed. Please check your API key and network connection.');
+      // Handle potential API key errors gracefully in the UI
+      if (err.message?.includes('401') || err.message?.includes('API_KEY')) {
+        setError("API Authentication Error. Please verify the API key is active.");
+      } else if (err.message?.includes('429')) {
+        setError("Quota exceeded. Please wait a moment and try again.");
+      } else {
+        setError(err.message || 'Something went wrong. Please try again.');
+      }
       setState(prev => ({ ...prev, isGenerating: false }));
     }
   };
@@ -79,7 +86,7 @@ export default function App() {
       }));
       setNewChapterTopic('');
     } catch (err: any) {
-      setError(err.message || "Could not add additional chapter.");
+      setError(err.message || "Could not generate the additional chapter.");
     } finally {
       setIsAddingChapter(false);
     }
@@ -91,7 +98,7 @@ export default function App() {
     
     try {
       const coverEl = document.getElementById('pdf-export-cover-capture');
-      if (!coverEl) throw new Error("Capture element not found");
+      if (!coverEl) throw new Error("Could not find the cover element to export.");
 
       const doc = new jsPDF('p', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -167,10 +174,10 @@ export default function App() {
         });
       });
 
-      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Manuscript.pdf`);
+      doc.save(`${state.data.title.replace(/\s+/g, '_')}_Authority_Ebook.pdf`);
     } catch (err) {
       console.error("PDF Export Error:", err);
-      alert("PDF building failed. Please ensure your browser supports canvas capture.");
+      alert("PDF generation encountered an error. Please try again.");
     } finally {
       setIsDownloading(false);
     }
@@ -184,8 +191,8 @@ export default function App() {
             <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} className="absolute inset-0 border-4 border-t-indigo-500 rounded-full"></motion.div>
           </div>
-          <h2 className="text-3xl font-black mb-4 tracking-tight">Writing Your Manuscript</h2>
-          <p className="text-slate-400 leading-relaxed text-sm">Gemini AI is crafting expert chapters. This usually takes 30-60 seconds.</p>
+          <h2 className="text-3xl font-black mb-4 tracking-tight">Architecting Authority</h2>
+          <p className="text-slate-400 leading-relaxed text-sm">Gemini AI is crafting expert-level content. This usually takes 30-45 seconds.</p>
         </motion.div>
       </div>
     );
@@ -216,7 +223,7 @@ export default function App() {
             <div className="max-w-7xl mx-auto px-6 text-center mb-24">
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.2em] mb-8">
                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                Instant Generation Engine
+                AI Content Engine
               </motion.div>
               
               <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.95] mb-8 max-w-4xl mx-auto">
@@ -228,7 +235,7 @@ export default function App() {
                   <div className="grid md:grid-cols-2 gap-4 p-4 text-left">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Core Topic</label>
-                      <input required type="text" placeholder="e.g. Passive Income" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
+                      <input required type="text" placeholder="e.g. Scaling E-commerce" className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 focus:ring-indigo-500 outline-none transition-all" value={form.topic} onChange={(e) => setForm({...form, topic: e.target.value})} />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2">Author Name</label>
@@ -241,8 +248,7 @@ export default function App() {
               
               {error && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-8 p-6 glass-panel border-rose-500/30 rounded-2xl max-w-xl mx-auto text-left">
-                   <p className="text-rose-400 text-sm leading-relaxed font-medium">Error: {error}</p>
-                   <p className="text-slate-500 text-xs mt-2">Ensure your API_KEY environment variable is correctly set in your project settings.</p>
+                   <p className="text-rose-400 text-sm leading-relaxed font-medium">Wait: {error}</p>
                 </motion.div>
               )}
             </div>
@@ -305,11 +311,11 @@ export default function App() {
                       <div className="glass-panel p-10 rounded-[2.5rem] border-slate-800/50 border-dashed border-2 bg-slate-900/10">
                         <div className="flex flex-col items-center text-center space-y-6">
                           <div className="space-y-2">
-                            <h4 className="text-xl font-black text-white">Extend Your Manuscript</h4>
-                            <p className="text-slate-400 text-sm">Add custom chapters to your book.</p>
+                            <h4 className="text-xl font-black text-white">Expand Your Manuscript</h4>
+                            <p className="text-slate-400 text-sm">Add custom chapters to refine your message.</p>
                           </div>
                           <form onSubmit={handleAddChapter} className="w-full max-w-lg flex flex-col md:flex-row gap-3">
-                            <input type="text" placeholder="e.g. Advanced Strategies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
+                            <input type="text" placeholder="e.g. Case Studies..." className="flex-1 bg-slate-900/50 border border-slate-800 rounded-2xl px-5 py-3 text-sm outline-none transition-all" value={newChapterTopic} onChange={(e) => setNewChapterTopic(e.target.value)} disabled={isAddingChapter} />
                             <button type="submit" disabled={!newChapterTopic || isAddingChapter} className="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm rounded-2xl shadow-lg min-w-[140px]">
                               {isAddingChapter ? 'Generating...' : 'Add Chapter'}
                             </button>

@@ -2,17 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EbookData, Chapter } from "../types.ts";
 
-/**
- * Creates a Gemini client. The API_KEY is obtained exclusively from the environment.
- */
-const getAIClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("The API_KEY environment variable is not configured. Please ensure it is set in your environment.");
-  }
-  return new GoogleGenAI({ apiKey: apiKey });
-};
-
 export const generateEbook = async (
   topic: string,
   niche: string,
@@ -20,7 +9,9 @@ export const generateEbook = async (
   tone: string
 ): Promise<EbookData> => {
   try {
-    const ai = getAIClient();
+    // Create AI instance directly with the environment key as per guidelines
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Generate a high-authority ebook for "${brandName}" in the "${niche}" niche about "${topic}" with a "${tone}" tone.
@@ -69,11 +60,13 @@ Requirements:
     });
 
     const text = response.text;
-    if (!text) throw new Error("Empty response from AI.");
+    if (!text) throw new Error("The AI returned an empty response.");
     return JSON.parse(text) as EbookData;
   } catch (err: any) {
-    console.error("Gemini Error:", err);
-    throw new Error(err.message || "Failed to generate ebook. Please ensure your API key is valid and active.");
+    console.error("Gemini Generation Error:", err);
+    // Extract a readable error message if possible
+    const errorMessage = err.message || "An unexpected error occurred during generation.";
+    throw new Error(errorMessage);
   }
 };
 
@@ -84,10 +77,11 @@ export const generateAdditionalChapter = async (
   tone: string
 ): Promise<Chapter> => {
   try {
-    const ai = getAIClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Add a new chapter to "${ebookTitle}" about "${newChapterTopic}". Maintaining tone: ${tone}. JSON output.`,
+      contents: `Add a new expert-level chapter to the ebook "${ebookTitle}" specifically about "${newChapterTopic}". Maintaining tone: ${tone}. Output as JSON.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -105,7 +99,7 @@ export const generateAdditionalChapter = async (
     if (!text) throw new Error("Empty response from AI.");
     return JSON.parse(text) as Chapter;
   } catch (err: any) {
-    console.error("Gemini Error:", err);
+    console.error("Gemini Chapter Addition Error:", err);
     throw new Error(err.message || "Failed to generate additional chapter.");
   }
 };
